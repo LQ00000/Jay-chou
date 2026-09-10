@@ -40,7 +40,8 @@ const SOURCES = {
     's33': { 'name': '🐾360', 'api': 'https://360zyzz.com/api.php/provide/vod/' },
     's34': { 'name': '🐾淘片', 'api': 'https://taopianapi.com/cjapi/mc/vod/json.html' },
     's35': { 'name': '🐾如意', 'api': 'https://cj.rycjapi.com/api.php/provide/vod/' },
-    's36': { 'name': '📺魔都', 'api': 'https://www.mdzyapi.com/api.php/provide/vod' }
+    's36': { 'name': '🐾影剧', 'api': 'https://yjzy.tv/api.php/provide/vod/' },
+    's37': { 'name': '📺魔都', 'api': 'https://www.mdzyapi.com/api.php/provide/vod' }
 };
 
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
