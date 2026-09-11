@@ -5,7 +5,7 @@ let extendObj = {};
 
 // 源配置，完全复刻py里sources
 const SOURCES = {
-    's1': { 'name': '🎬香蕉', 'api': 'https://www.xiangjiaozyw.com/api.php/provide/vod/' },
+   's1': { 'name': '🎬香蕉', 'api': 'https://www.xiangjiaozyw.com/api.php/provide/vod/' },
     's2': { 'name': '💧番茄', 'api': 'http://fhapi9.com/api.php/provide/vod/' },
     's3': { 'name': '🧸嘿嘿', 'api': 'https://api.heiapi.cc/api.php/provide/vod/' },
     's4': { 'name': '📺鲨鱼', 'api': 'https://shayuzy5.com/api.php/provide/vod/' },
@@ -21,7 +21,7 @@ const SOURCES = {
     's14': { 'name': '📺潢AV', 'api': 'https://www.pgxdy.com/api/json.php' },
     's15': { 'name': '📺杏吧', 'api': 'https://api.xgbbk8.com/api.php/provide/vod/' },
     's16': { 'name': '📺CK资源', 'api': 'https://ckzy.me/api.php/provide/vod' },
-    's17': { 'name': '📺越南', 'api': 'https://vnzyz.com/api.php/provide/vod },
+    's17': { 'name': '📺越南', 'api': 'https://vnzyz.com/api.php/provide/vod '},
     's18': { 'name': '📺15', 'api': 'https://155api.com/api.php/provide/vod/' },
     's19': { 'name': '📺91AV', 'api': 'https://91av.cyou/api.php/provide/vod/' },
     's20': { 'name': '🌕红楼', 'api': 'https://www.hlzy.store/api.php/provide/vod/' },
@@ -31,7 +31,7 @@ const SOURCES = {
     's24': { 'name': '📺黑料', 'api': 'https://heiliaozyapi.com/api.php/provide/vod/' },
     's25': { 'name': '🌸仓库', 'api': 'https://hsckzy888.com/api.php/provide/vod/' },
     's26': { 'name': '🐮玉兔', 'api': 'https://apiyutu.com/api.php/provide/vod' },
-    's27': { 'name': '☁️精东', 'api': 'http://chujia.cc/api.php/provide/vod/ },
+    's27': { 'name': '☁️精东', 'api': 'http://chujia.cc/api.php/provide/vod/' },
     's28': { 'name': '🏎奶香', 'api': '"https://naixxzy.com/api.php/provide/vod' },
     's29': { 'name': '🦅乐播', 'api': 'https://lbapi9.com/api.php/provide/vod' },
     's30': { 'name': '⚡JKUN', 'api': 'https://jkunzyapi.com/api.php/provide/vod' },
@@ -46,10 +46,10 @@ const SOURCES = {
     's39': { 'name': '🐾CK百货', 'api': 'https://ckbh1.xyz/api.php/provide/vod/' },
     's40': { 'name': '🐾番茄', 'api': 'https://fqzy.me/api.php/provide/vod/' },
     's41': { 'name': '🐾森林', 'api': 'https://slapibf.com/api.php/provide/vod/' },
- '  s42': { 'name': '🐾大地', 'api': 'https://dadiapi.com/feifei2/' },
-   's43': { 'name': '🐾色猫', 'api': 'https://caiji.semaozy.net/inc/apijson_vod.php' },
-   's44': { 'name': '🐾滴滴', 'api': 'https://api.ddapi.cc/api.php/provide/vod/' },
-    's45': { 'name': '📺柿园', 'api': https://xxavs.com/api.php/provide/vod' }
+    's42': { 'name': '🐾大地', 'api': 'https://dadiapi.com/feifei2/' },
+    's43': { 'name': '🐾色猫', 'api': 'https://caiji.semaozy.net/inc/apijson_vod.php' },
+    's44': { 'name': '🐾滴滴', 'api': 'https://api.ddapi.cc/api.php/provide/vod/' },
+    's45': { 'name': '📺湿园', 'api': 'https://xxavs.com/api.php/provide/vod' }
 };
 
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
