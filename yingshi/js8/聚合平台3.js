@@ -39,9 +39,15 @@ const SOURCES = {
     's32': { 'name': '🍃飘零', 'api': 'https://p2100.net/api.php/provide/vod' },
     's33': { 'name': '🐾360', 'api': 'https://360zyzz.com/api.php/provide/vod/' },
     's34': { 'name': '🐾淘片', 'api': 'https://taopianapi.com/cjapi/mc/vod/json.html' },
-    's35': { 'name': '🐾如意', 'api': 'https://cj.rycjapi.com/api.php/provide/vod/' },
-    's36': { 'name': '🐾影剧', 'api': 'https://yjzy.tv/api.php/provide/vod/' },
-    's37': { 'name': '📺魔都', 'api': 'https://www.mdzyapi.com/api.php/provide/vod' }
+    's35': { 'name': '🐾快车', 'api': 'https://caiji.kuaichezy.org/api.php/provide/vod/' },
+    's36': { 'name': '🐾奇异', 'api': 'https://iqiyizyapi.com/api.php/provide/vod/' },
+    's37': { 'name': '🐾鸭鸭', 'api': 'https://cj.yayazy.net/api.php/provide/vod/' },
+    's38': { 'name': '🐾极速', 'api': 'https://jszyapi.com/api.php/provide/vod/' },
+    's39': { 'name': '🐾如意', 'api': 'https://cj.rycjapi.com/api.php/provide/vod/' },
+    's40': { 'name': '🐾火狐', 'api': 'https://hhzyapi.com/api.php/provide/vod/' },
+    's41': { 'name': '🐾刺桐', 'api': 'http://pg.cttv.vip/api.php/provide/vod/' },
+    's42': { 'name': '🐾tvbx', 'api': 'https://dy.7772888.xyz/api.php/tvbox' },
+    's43': { 'name': '📺魔都', 'api': 'https://www.mdzyapi.com/api.php/provide/vod' }
 };
 
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
