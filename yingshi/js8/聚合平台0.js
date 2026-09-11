@@ -49,7 +49,9 @@ const SOURCES = {
     's42': { 'name': '🐾大地', 'api': 'https://dadiapi.com/feifei2/' },
     's43': { 'name': '🐾色猫', 'api': 'https://caiji.semaozy.net/inc/apijson_vod.php' },
     's44': { 'name': '🐾滴滴', 'api': 'https://api.ddapi.cc/api.php/provide/vod/' },
-    's45': { 'name': '📺湿园', 'api': 'https://xxavs.com/api.php/provide/vod' }
+    's45': { 'name': '🐾91', 'api': 'https://91md.me/api.php/provide/vod/' },
+    's46': { 'name': '🐾细胞', 'api': 'https://www.xxibaozyw.com/api.php/provide/vod/' },
+    's47': { 'name': '📺湿园', 'api': 'https://xxavs.com/api.php/provide/vod' }
 };
 
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
