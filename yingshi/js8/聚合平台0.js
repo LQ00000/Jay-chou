@@ -25,7 +25,7 @@ const SOURCES = {
     's17': { 'name': '📺越南', 'api': 'https://vnzyz.com/api.php/provide/vod' },
     's18': { 'name': '📺15', 'api': 'https://155api.com/api.php/provide/vod/' },
     's19': { 'name': '📺91AV', 'api': 'https://91av.cyou/api.php/provide/vod/' },
-    's20': { 'name': '🌕红楼', 'api': 'https://www.hlzy.store/api.php/provide/vod/' },
+    's20': { 'name': '🌕红楼', 'api': 'https://www.hlzyapi.vip/api.php/provide/vod/' },
     's21': { 'name': '📺小鸡', 'api': 'https://api.xiaojizy.live/provide/vod/' },
     's22': { 'name': '📺大奶', 'api': 'https://apidanaizi.com/api.php/provide/vod/' },
     's23': { 'name': '📺豆豆', 'api': 'https://api.douapi.cc/api.php/provide/vod/' },
