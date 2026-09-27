@@ -156,8 +156,9 @@
     "header": {
       "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
       "Referer": "https://www.ppnix.com/cn/",
+      "Origin": "https://www.ppnix.com",
       "Accept-Language": "zh-CN,zh;q=0.9",
-      "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"
+      "Accept": "*/*"
     },
     "categories": [
       {
@@ -190,12 +191,12 @@
       "meta": "h1@text||title@text"
     },
     "play": {
-      "list": "body@js:function getPlay(html){var r=[],s={},m,id='',arr=[];m=html.match(/infoid\\s*=\\s*(\\d+)/);if(m)id=m[1];m=html.match(/m3u8\\s*=\\s*(\\[[^\\]]*\\])/);if(m){try{arr=JSON.parse(m[1].replace(/'/g,'\"'));}catch(e){}}if(!id){m=html.match(/\\/(?:movie|tv)\\/(\\d+)\\.html/);if(m)id=m[1];}if(id&&arr.length){for(var i=0;i<arr.length;i++){var ep=String(arr[i]);var name=/^\\d+$/.test(ep)?('第'+ep+'集'):ep;var u='https://www.ppnix.com/info/m3u8/'+id+'/'+encodeURIComponent(ep)+'.m3u8';if(!s[u]){s[u]=1;r.push({name:name,url:u});}}}if(!r.length&&id)r.push({name:'1080P',url:'https://www.ppnix.com/info/m3u8/'+id+'/1080P.m3u8'});return r.length?JSON.stringify(r):'[]';}getPlay(__result);",
+      "list": "body@js:function getPlay(html){var r=[],s={},m,id=\"\",arr=[],i,ep,name,u;m=html.match(/infoid\\s*=\\s*(\\d+)/);if(m)id=m[1];m=html.match(/m3u8\\s*=\\s*(\\[[^\\]]*\\])/);if(m){var raw=m[1];var re2=/['\"]([^'\"]+)['\"]/g;while((m=re2.exec(raw)))arr.push(m[1]);}if(!id){m=html.match(/\\/(?:movie|tv)\\/(\\d+)\\.html/);if(m)id=m[1];}if(id&&arr.length){for(i=0;i<arr.length;i++){ep=String(arr[i]);name=/^\\d+$/.test(ep)?(\"第\"+ep+\"集\"):ep;u=\"https://www.ppnix.com/info/m3u8/\"+id+\"/\"+encodeURIComponent(ep)+\".m3u8\";if(!s[u]){s[u]=1;r.push({name:name,url:u});}}}if(!r.length&&id){r.push({name:\"1080P\",url:\"https://www.ppnix.com/info/m3u8/\"+id+\"/1080P.m3u8\"});r.push({name:\"720P\",url:\"https://www.ppnix.com/info/m3u8/\"+id+\"/720P.m3u8\"});}return r.length?JSON.stringify(r):\"[]\";}getPlay(__result);",
       "name": "$.name",
       "url": "$.url"
     },
     "toc": {
-      "list": "body@js:function getPlay(html){var r=[],s={},m,id='',arr=[];m=html.match(/infoid\\s*=\\s*(\\d+)/);if(m)id=m[1];m=html.match(/m3u8\\s*=\\s*(\\[[^\\]]*\\])/);if(m){try{arr=JSON.parse(m[1].replace(/'/g,'\"'));}catch(e){}}if(!id){m=html.match(/\\/(?:movie|tv)\\/(\\d+)\\.html/);if(m)id=m[1];}if(id&&arr.length){for(var i=0;i<arr.length;i++){var ep=String(arr[i]);var name=/^\\d+$/.test(ep)?('第'+ep+'集'):ep;var u='https://www.ppnix.com/info/m3u8/'+id+'/'+encodeURIComponent(ep)+'.m3u8';if(!s[u]){s[u]=1;r.push({name:name,url:u});}}}if(!r.length&&id)r.push({name:'1080P',url:'https://www.ppnix.com/info/m3u8/'+id+'/1080P.m3u8'});return r.length?JSON.stringify(r):'[]';}getPlay(__result);",
+      "list": "body@js:function getPlay(html){var r=[],s={},m,id=\"\",arr=[],i,ep,name,u;m=html.match(/infoid\\s*=\\s*(\\d+)/);if(m)id=m[1];m=html.match(/m3u8\\s*=\\s*(\\[[^\\]]*\\])/);if(m){var raw=m[1];var re2=/['\"]([^'\"]+)['\"]/g;while((m=re2.exec(raw)))arr.push(m[1]);}if(!id){m=html.match(/\\/(?:movie|tv)\\/(\\d+)\\.html/);if(m)id=m[1];}if(id&&arr.length){for(i=0;i<arr.length;i++){ep=String(arr[i]);name=/^\\d+$/.test(ep)?(\"第\"+ep+\"集\"):ep;u=\"https://www.ppnix.com/info/m3u8/\"+id+\"/\"+encodeURIComponent(ep)+\".m3u8\";if(!s[u]){s[u]=1;r.push({name:name,url:u});}}}if(!r.length&&id){r.push({name:\"1080P\",url:\"https://www.ppnix.com/info/m3u8/\"+id+\"/1080P.m3u8\"});r.push({name:\"720P\",url:\"https://www.ppnix.com/info/m3u8/\"+id+\"/720P.m3u8\"});}return r.length?JSON.stringify(r):\"[]\";}getPlay(__result);",
       "name": "$.name",
       "url": "$.url"
     }
@@ -2561,6 +2562,83 @@
     },
     "toc": {
       "list": "body@js:function getPlay(html){var r=[],s={},m,u;\nfunction abs(u){if(!u)return'';u=String(u).replace(/&amp;/g,'&').replace(/\\\\\\//g,'/');if(u.indexOf('//')===0)return'https:'+u;if(u.indexOf('http')===0)return u;return'https://weishitv.xyz'+(u.charAt(0)==='/'?u:'/'+u);}\nfunction dec(u){if(!u)return'';u=String(u);if(u.indexOf('%')>=0){try{u=decodeURIComponent(u);}catch(e){}}if(/^https?:\\/\\//i.test(u)===false&&/^[A-Za-z0-9+\\/=]+$/.test(u)&&u.length>20){try{u=decodeURIComponent(escape(atob(u)));}catch(e){try{u=atob(u);}catch(e2){}}}return u;}\nm=html.match(/player_aaaa\\s*=\\s*(\\{[\\s\\S]*?\\})\\s*;/);\nif(m){try{var j=JSON.parse(m[1]);u=abs(dec(j.url||''));if(u&&/m3u8|mp4|\\.flv/i.test(u))r.push({name:j.from||'播放',url:u});}catch(e){var mm=html.match(/\"url\"\\s*:\\s*\"([^\"]+)\"/);if(mm){u=abs(dec(mm[1].replace(/\\\\\\//g,'/')));if(u)r.push({name:'播放',url:u});}}}\nif(!r.length){var mm=html.match(/\"url\"\\s*:\\s*\"([^\"]+\\.m3u8[^\"]*)\"/);if(mm)r.push({name:'播放',url:abs(mm[1].replace(/\\\\\\//g,'/'))});}\nvar re=/https?:\\/\\/[^\\\"'\\s<>]+\\.m3u8[^\\\"'\\s<>]*/gi;while((m=re.exec(html))){u=m[0].replace(/&amp;/g,'&');if(s[u])continue;s[u]=1;r.push({name:'直链',url:u});}\nreturn r.length?JSON.stringify(r):'[]';}getPlay(__result);",
+      "name": "$.name",
+      "url": "$.url"
+    }
+  },
+  {
+    "name": "📺Archive",
+    "api": "https://archive.org",
+    "type": 2,
+    "searchable": true,
+    "removeReferer": false,
+    "header": {
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+      "Accept": "application/json,text/html,*/*",
+      "Accept-Language": "en-US,en;q=0.9,zh-CN;q=0.8"
+    },
+    "categories": [
+      {
+        "name": "电影精选",
+        "url": "/advancedsearch.php?q=collection:feature_films AND mediatype:movies&fl[]=identifier&fl[]=title&fl[]=year&sort[]=downloads+desc&rows=24&page={{page}}&output=json",
+        "url2": "/advancedsearch.php?q=collection:feature_films AND mediatype:movies&fl[]=identifier&fl[]=title&fl[]=year&sort[]=downloads+desc&rows=24&page=1&output=json"
+      },
+      {
+        "name": "开源电影",
+        "url": "/advancedsearch.php?q=collection:opensource_movies AND mediatype:movies AND format:MPEG4&fl[]=identifier&fl[]=title&fl[]=year&sort[]=downloads+desc&rows=24&page={{page}}&output=json",
+        "url2": "/advancedsearch.php?q=collection:opensource_movies AND mediatype:movies AND format:MPEG4&fl[]=identifier&fl[]=title&fl[]=year&sort[]=downloads+desc&rows=24&page=1&output=json"
+      },
+      {
+        "name": "动画卡通",
+        "url": "/advancedsearch.php?q=collection:animationandcartoons AND mediatype:movies&fl[]=identifier&fl[]=title&fl[]=year&sort[]=downloads+desc&rows=24&page={{page}}&output=json",
+        "url2": "/advancedsearch.php?q=collection:animationandcartoons AND mediatype:movies&fl[]=identifier&fl[]=title&fl[]=year&sort[]=downloads+desc&rows=24&page=1&output=json"
+      },
+      {
+        "name": "经典电视",
+        "url": "/advancedsearch.php?q=collection:classic_tv AND mediatype:movies&fl[]=identifier&fl[]=title&fl[]=year&sort[]=downloads+desc&rows=24&page={{page}}&output=json",
+        "url2": "/advancedsearch.php?q=collection:classic_tv AND mediatype:movies&fl[]=identifier&fl[]=title&fl[]=year&sort[]=downloads+desc&rows=24&page=1&output=json"
+      },
+      {
+        "name": "热门影片",
+        "url": "/advancedsearch.php?q=mediatype:movies AND format:MPEG4&fl[]=identifier&fl[]=title&fl[]=year&sort[]=downloads+desc&rows=24&page={{page}}&output=json",
+        "url2": "/advancedsearch.php?q=mediatype:movies AND format:MPEG4&fl[]=identifier&fl[]=title&fl[]=year&sort[]=downloads+desc&rows=24&page=1&output=json"
+      },
+      {
+        "name": "短片",
+        "url": "/advancedsearch.php?q=collection:short_films AND mediatype:movies&fl[]=identifier&fl[]=title&fl[]=year&sort[]=downloads+desc&rows=24&page={{page}}&output=json",
+        "url2": "/advancedsearch.php?q=collection:short_films AND mediatype:movies&fl[]=identifier&fl[]=title&fl[]=year&sort[]=downloads+desc&rows=24&page=1&output=json"
+      },
+      {
+        "name": "新闻影片",
+        "url": "/advancedsearch.php?q=collection:newsandpublicaffairs AND mediatype:movies&fl[]=identifier&fl[]=title&fl[]=year&sort[]=downloads+desc&rows=24&page={{page}}&output=json",
+        "url2": "/advancedsearch.php?q=collection:newsandpublicaffairs AND mediatype:movies&fl[]=identifier&fl[]=title&fl[]=year&sort[]=downloads+desc&rows=24&page=1&output=json"
+      }
+    ],
+    "list": {
+      "list": "body@js:function parse(html){var r=[],s={},j,docs,i,d,id,title,pic;\ntry{j=JSON.parse(html);}catch(e){var m=html.match(/\\{[\\s\\S]*\"response\"[\\s\\S]*\\}/);if(m){try{j=JSON.parse(m[0]);}catch(e2){return'[]';}}else return'[]';}\ndocs=(j&&j.response&&j.response.docs)||[];\nfor(i=0;i<docs.length;i++){d=docs[i];id=d.identifier||'';if(!id||s[id])continue;s[id]=1;\ntitle=d.title||id;if(Array.isArray(title))title=title[0];\npic='https://archive.org/services/img/'+id;\nr.push({name:String(title).slice(0,120),id:id,detailUrl:'/details/'+id,coverUrl:pic,tips:(d.year?String(d.year):'')});}\nreturn r.length?JSON.stringify(r):'[]';}parse(__result);",
+      "name": "$.name",
+      "tips": "$.tips",
+      "coverUrl": "$.coverUrl",
+      "detailUrl": "$.detailUrl"
+    },
+    "search": {
+      "url": "/advancedsearch.php?q=mediatype:movies AND ({{key}})&fl[]=identifier&fl[]=title&fl[]=year&sort[]=downloads+desc&rows=24&page=1&output=json",
+      "list": "body@js:function parse(html){var r=[],s={},j,docs,i,d,id,title,pic;\ntry{j=JSON.parse(html);}catch(e){var m=html.match(/\\{[\\s\\S]*\"response\"[\\s\\S]*\\}/);if(m){try{j=JSON.parse(m[0]);}catch(e2){return'[]';}}else return'[]';}\ndocs=(j&&j.response&&j.response.docs)||[];\nfor(i=0;i<docs.length;i++){d=docs[i];id=d.identifier||'';if(!id||s[id])continue;s[id]=1;\ntitle=d.title||id;if(Array.isArray(title))title=title[0];\npic='https://archive.org/services/img/'+id;\nr.push({name:String(title).slice(0,120),id:id,detailUrl:'/details/'+id,coverUrl:pic,tips:(d.year?String(d.year):'')});}\nreturn r.length?JSON.stringify(r):'[]';}parse(__result);",
+      "name": "$.name",
+      "tips": "$.tips",
+      "coverUrl": "$.coverUrl",
+      "detailUrl": "$.detailUrl"
+    },
+    "detail": {
+      "meta": "h1@text||title@text"
+    },
+    "play": {
+      "list": "body@js:function getPlay(html){var r=[],s={},id='',m,j,files,i,f,name,url,fmt;\nm=html.match(/\\/details\\/([^\"'\\/\\s?#]+)/);if(m)id=m[1];\nif(!id){m=html.match(/og:url[^>]+content=\"[^\"]*\\/details\\/([^\"\\/]+)/);if(m)id=m[1];}\nif(!id){m=html.match(/identifier[\"\\s:=]+[\"']?([A-Za-z0-9_\\-\\.]+)/);if(m)id=m[1];}\nfunction add(n,u){if(!u||s[u])return;s[u]=1;r.push({name:n,url:u});}\nif(id){\ntry{var xhr=new XMLHttpRequest();xhr.open('GET','https://archive.org/metadata/'+id,false);\nxhr.setRequestHeader('Accept','application/json');xhr.send(null);\nif(xhr.status===200){j=JSON.parse(xhr.responseText);files=j.files||[];\nvar prefer=[];\nfor(i=0;i<files.length;i++){f=files[i];name=String(f.name||'');fmt=String(f.format||'').toLowerCase();\nif(/\\.mp4$/i.test(name)||/mpeg4|h\\.264|512kb/i.test(fmt))prefer.push(f);\nelse if(/\\.m3u8$/i.test(name))prefer.push(f);}\nprefer.sort(function(a,b){return (parseInt(b.size||0)||0)-(parseInt(a.size||0)||0);});\nfor(i=0;i<prefer.length&&i<8;i++){f=prefer[i];name=String(f.name||'');\nurl='https://archive.org/download/'+id+'/'+encodeURIComponent(name).replace(/%2F/g,'/');\nvar label=(f.format||name).toString().slice(0,40);add(label,url);}\n}}catch(e){}\n}\nif(!r.length&&id)add('详情页','https://archive.org/details/'+id);\nreturn r.length?JSON.stringify(r):'[]';}getPlay(__result);",
+      "name": "$.name",
+      "url": "$.url"
+    },
+    "toc": {
+      "list": "body@js:function getPlay(html){var r=[],s={},id='',m,j,files,i,f,name,url,fmt;\nm=html.match(/\\/details\\/([^\"'\\/\\s?#]+)/);if(m)id=m[1];\nif(!id){m=html.match(/og:url[^>]+content=\"[^\"]*\\/details\\/([^\"\\/]+)/);if(m)id=m[1];}\nif(!id){m=html.match(/identifier[\"\\s:=]+[\"']?([A-Za-z0-9_\\-\\.]+)/);if(m)id=m[1];}\nfunction add(n,u){if(!u||s[u])return;s[u]=1;r.push({name:n,url:u});}\nif(id){\ntry{var xhr=new XMLHttpRequest();xhr.open('GET','https://archive.org/metadata/'+id,false);\nxhr.setRequestHeader('Accept','application/json');xhr.send(null);\nif(xhr.status===200){j=JSON.parse(xhr.responseText);files=j.files||[];\nvar prefer=[];\nfor(i=0;i<files.length;i++){f=files[i];name=String(f.name||'');fmt=String(f.format||'').toLowerCase();\nif(/\\.mp4$/i.test(name)||/mpeg4|h\\.264|512kb/i.test(fmt))prefer.push(f);\nelse if(/\\.m3u8$/i.test(name))prefer.push(f);}\nprefer.sort(function(a,b){return (parseInt(b.size||0)||0)-(parseInt(a.size||0)||0);});\nfor(i=0;i<prefer.length&&i<8;i++){f=prefer[i];name=String(f.name||'');\nurl='https://archive.org/download/'+id+'/'+encodeURIComponent(name).replace(/%2F/g,'/');\nvar label=(f.format||name).toString().slice(0,40);add(label,url);}\n}}catch(e){}\n}\nif(!r.length&&id)add('详情页','https://archive.org/details/'+id);\nreturn r.length?JSON.stringify(r):'[]';}getPlay(__result);",
       "name": "$.name",
       "url": "$.url"
     }
