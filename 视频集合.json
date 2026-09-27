@@ -172,30 +172,30 @@
       }
     ],
     "list": {
-      "list": "body@js:function parse(html){var r=[],s={},m;\nvar re=/href=\"(\\/cn\\/(?:movie|tv)\\/(\\d+)\\.html)\"[^>]*title=\"([^\"]*)\"/gi;\nwhile((m=re.exec(html))){var href=m[1],id=m[2],title=(m[3]||'').trim();if(s[href])continue;s[href]=1;\nvar near=html.slice(Math.max(0,m.index-500),m.index+200);\nvar pic='';var pm=near.match(/(?:src|data-src)=\"(https?:\\/\\/[^\"]+\\.(?:jpg|jpeg|png|webp)[^\"]*)\"/i);if(pm)pic=pm[1];\nif(!title)title='影片'+id;r.push({vod_id:href,vod_name:title,vod_pic:pic,vod_remarks:''});}\nif(!r.length){re=/<h2>\\s*<a\\s+href=\"(\\/cn\\/(?:movie|tv)\\/(\\d+)\\.html)\"[^>]*>([^<]+)<\\/a>/gi;\nwhile((m=re.exec(html))){if(s[m[1]])continue;s[m[1]]=1;r.push({vod_id:m[1],vod_name:m[3].trim(),vod_pic:'',vod_remarks:''});}}\nreturn r.length?JSON.stringify(r):'[]';}parse(__result);",
-      "name": "$.vod_name",
-      "tips": "$.vod_remarks",
-      "coverUrl": "$.vod_pic",
-      "detailUrl": "$.vod_id"
+      "list": "a.thumbnail[href*='/cn/movie/'], a.thumbnail[href*='/cn/tv/'], h2 a[href*='/cn/movie/'], h2 a[href*='/cn/tv/']",
+      "name": "title||img@alt||text",
+      "tips": ".rate@text||span@text",
+      "coverUrl": "img@src||img@data-src||src",
+      "detailUrl": "href"
     },
     "search": {
       "url": "/cn/?s={{key}}",
-      "list": "body@js:function parse(html){var r=[],s={},m;\nvar re=/href=\"(\\/cn\\/(?:movie|tv)\\/(\\d+)\\.html)\"[^>]*title=\"([^\"]*)\"/gi;\nwhile((m=re.exec(html))){var href=m[1],id=m[2],title=(m[3]||'').trim();if(s[href])continue;s[href]=1;\nvar near=html.slice(Math.max(0,m.index-500),m.index+200);\nvar pic='';var pm=near.match(/(?:src|data-src)=\"(https?:\\/\\/[^\"]+\\.(?:jpg|jpeg|png|webp)[^\"]*)\"/i);if(pm)pic=pm[1];\nif(!title)title='影片'+id;r.push({vod_id:href,vod_name:title,vod_pic:pic,vod_remarks:''});}\nif(!r.length){re=/<h2>\\s*<a\\s+href=\"(\\/cn\\/(?:movie|tv)\\/(\\d+)\\.html)\"[^>]*>([^<]+)<\\/a>/gi;\nwhile((m=re.exec(html))){if(s[m[1]])continue;s[m[1]]=1;r.push({vod_id:m[1],vod_name:m[3].trim(),vod_pic:'',vod_remarks:''});}}\nreturn r.length?JSON.stringify(r):'[]';}parse(__result);",
-      "name": "$.vod_name",
-      "tips": "$.vod_remarks",
-      "coverUrl": "$.vod_pic",
-      "detailUrl": "$.vod_id"
+      "list": "a.thumbnail[href*='/cn/movie/'], a.thumbnail[href*='/cn/tv/'], h2 a[href*='/cn/movie/'], h2 a[href*='/cn/tv/']",
+      "name": "title||img@alt||text",
+      "tips": ".rate@text||span@text",
+      "coverUrl": "img@src||img@data-src||src",
+      "detailUrl": "href"
     },
     "detail": {
       "meta": "h1@text||title@text"
     },
     "play": {
-      "list": "body@js:function getPlay(html){var r=[],s={},m,id='',arr=[];\nm=html.match(/infoid\\s*=\\s*(\\d+)/);if(m)id=m[1];\nm=html.match(/m3u8\\s*=\\s*(\\[[^\\]]*\\])/);if(m){try{arr=JSON.parse(m[1].replace(/'/g,'\"'));}catch(e){}}\nif(!id){m=html.match(/\\/(?:movie|tv)\\/(\\d+)\\.html/);if(m)id=m[1];}\nif(id&&arr.length){for(var i=0;i<arr.length;i++){var ep=String(arr[i]);var name=/^\\d+$/.test(ep)?('第'+ep+'集'):ep;var u='https://www.ppnix.com/info/m3u8/'+id+'/'+encodeURIComponent(ep)+'.m3u8';if(!s[u]){s[u]=1;r.push({name:name,url:u});}}}\nif(!r.length&&id)r.push({name:'1080P',url:'https://www.ppnix.com/info/m3u8/'+id+'/1080P.m3u8'});\nreturn r.length?JSON.stringify(r):'[]';}getPlay(__result);",
+      "list": "body@js:function getPlay(html){var r=[],s={},m,id='',arr=[];m=html.match(/infoid\\s*=\\s*(\\d+)/);if(m)id=m[1];m=html.match(/m3u8\\s*=\\s*(\\[[^\\]]*\\])/);if(m){try{arr=JSON.parse(m[1].replace(/'/g,'\"'));}catch(e){}}if(!id){m=html.match(/\\/(?:movie|tv)\\/(\\d+)\\.html/);if(m)id=m[1];}if(id&&arr.length){for(var i=0;i<arr.length;i++){var ep=String(arr[i]);var name=/^\\d+$/.test(ep)?('第'+ep+'集'):ep;var u='https://www.ppnix.com/info/m3u8/'+id+'/'+encodeURIComponent(ep)+'.m3u8';if(!s[u]){s[u]=1;r.push({name:name,url:u});}}}if(!r.length&&id)r.push({name:'1080P',url:'https://www.ppnix.com/info/m3u8/'+id+'/1080P.m3u8'});return r.length?JSON.stringify(r):'[]';}getPlay(__result);",
       "name": "$.name",
       "url": "$.url"
     },
     "toc": {
-      "list": "body@js:function getPlay(html){var r=[],s={},m,id='',arr=[];\nm=html.match(/infoid\\s*=\\s*(\\d+)/);if(m)id=m[1];\nm=html.match(/m3u8\\s*=\\s*(\\[[^\\]]*\\])/);if(m){try{arr=JSON.parse(m[1].replace(/'/g,'\"'));}catch(e){}}\nif(!id){m=html.match(/\\/(?:movie|tv)\\/(\\d+)\\.html/);if(m)id=m[1];}\nif(id&&arr.length){for(var i=0;i<arr.length;i++){var ep=String(arr[i]);var name=/^\\d+$/.test(ep)?('第'+ep+'集'):ep;var u='https://www.ppnix.com/info/m3u8/'+id+'/'+encodeURIComponent(ep)+'.m3u8';if(!s[u]){s[u]=1;r.push({name:name,url:u});}}}\nif(!r.length&&id)r.push({name:'1080P',url:'https://www.ppnix.com/info/m3u8/'+id+'/1080P.m3u8'});\nreturn r.length?JSON.stringify(r):'[]';}getPlay(__result);",
+      "list": "body@js:function getPlay(html){var r=[],s={},m,id='',arr=[];m=html.match(/infoid\\s*=\\s*(\\d+)/);if(m)id=m[1];m=html.match(/m3u8\\s*=\\s*(\\[[^\\]]*\\])/);if(m){try{arr=JSON.parse(m[1].replace(/'/g,'\"'));}catch(e){}}if(!id){m=html.match(/\\/(?:movie|tv)\\/(\\d+)\\.html/);if(m)id=m[1];}if(id&&arr.length){for(var i=0;i<arr.length;i++){var ep=String(arr[i]);var name=/^\\d+$/.test(ep)?('第'+ep+'集'):ep;var u='https://www.ppnix.com/info/m3u8/'+id+'/'+encodeURIComponent(ep)+'.m3u8';if(!s[u]){s[u]=1;r.push({name:name,url:u});}}}if(!r.length&&id)r.push({name:'1080P',url:'https://www.ppnix.com/info/m3u8/'+id+'/1080P.m3u8'});return r.length?JSON.stringify(r):'[]';}getPlay(__result);",
       "name": "$.name",
       "url": "$.url"
     }
@@ -2287,44 +2287,43 @@
     "categories": [
       {
         "name": "全部",
-        "url": "/?page={{page}}",
+        "url": "/",
         "url2": "/"
       },
       {
         "name": "韩剧",
-        "url": "/?cat=tv&page={{page}}",
-        "url2": "/?cat=tv"
+        "url": "/",
+        "url2": "/"
       },
       {
         "name": "电影",
-        "url": "/?cat=movie&page={{page}}",
-        "url2": "/?cat=movie"
+        "url": "/",
+        "url2": "/"
       },
       {
         "name": "综艺",
-        "url": "/?cat=zongyi&page={{page}}",
-        "url2": "/?cat=zongyi"
+        "url": "/",
+        "url2": "/"
       },
       {
         "name": "动漫",
-        "url": "/?cat=dongman&page={{page}}",
-        "url2": "/?cat=dongman"
+        "url": "/",
+        "url2": "/"
       }
     ],
     "list": {
-      "list": "body@js:function parse(html){var r=[],s={},m;var href='',cat='';\ntry{href=String(__url||__href||location.href||'');}catch(e){}\nm=href.match(/[?&]cat=([a-z]+)/);if(m)cat=m[1];\nvar re=/<a[^>]*href=\"(\\/(tv|movie|zongyi|dongman)\\/([^\"\\/?#]+))\"[^>]*>[\\s\\S]{0,800}?(?:data-src|src)=\"([^\"]+)\"[\\s\\S]{0,200}?alt=\"([^\"]*)\"/gi;\nwhile((m=re.exec(html))){var path=m[1],type=m[2],slug=m[3],pic=m[4],name=(m[5]||'').trim();\nif(s[path])continue;if(/^\\d+$/.test(slug))continue;if(cat&&type!==cat)continue;\ns[path]=1;if(!name)name=slug;if(pic.indexOf('data:')===0){var near=html.slice(m.index,m.index+600);var pm=near.match(/data-src=\"(https?:\\/\\/[^\"]+)\"/);if(pm)pic=pm[1];}\nr.push({vod_id:path,vod_name:name,vod_pic:pic,vod_remarks:type});}\nif(!r.length){re=/href=\"(\\/(tv|movie|zongyi|dongman)\\/([^\"\\/?#]+))\"/gi;while((m=re.exec(html))){if(s[m[1]]||/^\\d+$/.test(m[3]))continue;if(cat&&m[2]!==cat)continue;s[m[1]]=1;r.push({vod_id:m[1],vod_name:m[3],vod_pic:'',vod_remarks:m[2]});}}\nreturn r.length?JSON.stringify(r):'[]';}parse(__result);",
-      "name": "$.vod_name",
-      "tips": "$.vod_remarks",
-      "coverUrl": "$.vod_pic",
-      "detailUrl": "$.vod_id"
+      "list": "a[href^='/tv/'], a[href^='/movie/'], a[href^='/zongyi/'], a[href^='/dongman/']",
+      "name": "img@alt||title||text",
+      "tips": "",
+      "coverUrl": "img@data-src||img@src||data-src||src",
+      "detailUrl": "href"
     },
     "search": {
       "url": "/search?wd={{key}}",
-      "list": "body@js:function parse(html){var r=[],s={},m;var href='',cat='';\ntry{href=String(__url||__href||location.href||'');}catch(e){}\nm=href.match(/[?&]cat=([a-z]+)/);if(m)cat=m[1];\nvar re=/<a[^>]*href=\"(\\/(tv|movie|zongyi|dongman)\\/([^\"\\/?#]+))\"[^>]*>[\\s\\S]{0,800}?(?:data-src|src)=\"([^\"]+)\"[\\s\\S]{0,200}?alt=\"([^\"]*)\"/gi;\nwhile((m=re.exec(html))){var path=m[1],type=m[2],slug=m[3],pic=m[4],name=(m[5]||'').trim();\nif(s[path])continue;if(/^\\d+$/.test(slug))continue;if(cat&&type!==cat)continue;\ns[path]=1;if(!name)name=slug;if(pic.indexOf('data:')===0){var near=html.slice(m.index,m.index+600);var pm=near.match(/data-src=\"(https?:\\/\\/[^\"]+)\"/);if(pm)pic=pm[1];}\nr.push({vod_id:path,vod_name:name,vod_pic:pic,vod_remarks:type});}\nif(!r.length){re=/href=\"(\\/(tv|movie|zongyi|dongman)\\/([^\"\\/?#]+))\"/gi;while((m=re.exec(html))){if(s[m[1]]||/^\\d+$/.test(m[3]))continue;if(cat&&m[2]!==cat)continue;s[m[1]]=1;r.push({vod_id:m[1],vod_name:m[3],vod_pic:'',vod_remarks:m[2]});}}\nreturn r.length?JSON.stringify(r):'[]';}parse(__result);",
-      "name": "$.vod_name",
-      "tips": "$.vod_remarks",
-      "coverUrl": "$.vod_pic",
-      "detailUrl": "$.vod_id"
+      "list": "a[href^='/tv/'], a[href^='/movie/'], a[href^='/zongyi/'], a[href^='/dongman/']",
+      "name": "img@alt||title||text",
+      "coverUrl": "img@data-src||img@src",
+      "detailUrl": "href"
     },
     "detail": {
       "meta": "h1@text||title@text"
@@ -2335,7 +2334,7 @@
       "url": "href"
     },
     "toc": {
-      "list": "body@js:function getPlay(html){var r=[],s={},m,u;\nfunction abs(u){if(!u)return'';u=String(u).replace(/&amp;/g,'&').replace(/\\\\\\//g,'/');if(u.indexOf('//')===0)return'https:'+u;if(u.indexOf('http')===0)return u;return'https://koreayule.com'+(u.charAt(0)==='/'?u:'/'+u);}\nm=html.match(/var\\s+player_aaaa\\s*=\\s*(\\{[\\s\\S]*?\\});/);\nif(m){try{var j=JSON.parse(m[1]);u=abs(j.url||'');if(u)r.push({name:(j.from||'线路')+(j.nid?(' · 第'+j.nid+'集'):''),url:u});if(j.url_next){u=abs(j.url_next);if(u&&!s[u]){s[u]=1;r.push({name:'下一集预览',url:u});}}}catch(e){}}\nvar re=/href=\"(\\/(?:tv|movie|zongyi|dongman)\\/[^\"\\/]+\\/\\d+\\?sid=\\d+)\"[^>]*class=\"[^\"]*player__ep[^\"]*\"[^>]*>\\s*([^<]+)/gi;\nwhile((m=re.exec(html))){u=abs(m[1]);if(s[u])continue;s[u]=1;r.push({name:(m[2]||'').trim()||'播放',url:u});}\nif(!r.length){re=/href=\"(\\/(?:tv|movie|zongyi|dongman)\\/[^\"]+\\/\\d+\\?sid=\\d+)\"[^>]*>\\s*(第?\\d+集)/gi;while((m=re.exec(html))){u=abs(m[1]);if(s[u])continue;s[u]=1;r.push({name:m[2],url:u});}}\nre=/https?:\\/\\/[^\\\"'\\s<>]+\\.m3u8[^\\\"'\\s<>]*/gi;while((m=re.exec(html))){u=m[0].replace(/&amp;/g,'&');if(s[u]||/preview/i.test(u))continue;s[u]=1;r.push({name:'直链',url:u});}\nreturn r.length?JSON.stringify(r):'[]';}getPlay(__result);",
+      "list": "body@js:function getPlay(html){var r=[],s={},m,u;function abs(u){if(!u)return'';u=String(u).replace(/&amp;/g,'&').replace(/\\\\\\//g,'/');if(u.indexOf('//')===0)return'https:'+u;if(u.indexOf('http')===0)return u;return'https://koreayule.com'+(u.charAt(0)==='/'?u:'/'+u);}m=html.match(/var\\s+player_aaaa\\s*=\\s*(\\{[\\s\\S]*?\\});/);if(m){try{var j=JSON.parse(m[1]);u=abs(j.url||'');if(u)r.push({name:(j.from||'线路'),url:u});}catch(e){}}var re=/href=\"(\\/(?:tv|movie|zongyi|dongman)\\/[^\"\\/]+\\/\\d+\\?sid=\\d+)\"[^>]*class=\"[^\"]*player__ep[^\"]*\"[^>]*>\\s*([^<]+)/gi;while((m=re.exec(html))){u=abs(m[1]);if(s[u])continue;s[u]=1;r.push({name:(m[2]||'').trim()||'播放',url:u});}if(!r.length){re=/href=\"(\\/(?:tv|movie|zongyi|dongman)\\/[^\"]+\\/\\d+\\?sid=\\d+)\"[^>]*>\\s*(第?\\d+集)/gi;while((m=re.exec(html))){u=abs(m[1]);if(s[u])continue;s[u]=1;r.push({name:m[2],url:u});}}re=/https?:\\/\\/[^\\\"'\\s<>]+\\.m3u8[^\\\"'\\s<>]*/gi;while((m=re.exec(html))){u=m[0].replace(/&amp;/g,'&');if(s[u])continue;s[u]=1;r.push({name:'直链',url:u});}return r.length?JSON.stringify(r):'[]';}getPlay(__result);",
       "name": "$.name",
       "url": "$.url"
     }
