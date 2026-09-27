@@ -254,6 +254,8 @@ class Spider(BaseSpider):
                 if u not in seen:
                     seen.add(u)
                     urls.append(('HLS', u))
+        # 720p 优先
+        urls.sort(key=lambda x: (0 if '720' in x[0] else 1 if '1080' in x[0] else 2))
         return urls
 
     def _extract_plays(self, html, page_url=''):
@@ -347,14 +349,28 @@ class Spider(BaseSpider):
         if m:
             pic = self._abs(m.group(1))
         plays = self._extract_plays(html, page_url)
-        # 线路1：详情页（播放时重新解码，最新地址）
-        # 线路2+：已解析的 m3u8（可直连）
-        lines = [('正片', page_url)]
+        # 只直出 m3u8，720p 优先
+        lines = []
         for n, u in plays:
-            if u and u != page_url:
+            if not u:
+                continue
+            if u.startswith('//'):
+                u = 'https:' + u
+            if re.search(r'\.m3u8(\?|$)', u, re.I):
                 lines.append((n, u))
-        if len(lines) == 1 and not plays:
-            pass  # only page
+            elif re.search(r'\.mp4(\?|$)', u, re.I):
+                lines.append((n, u))
+        # 720p 排前面
+        def _score(item):
+            n = item[0].lower()
+            if '720' in n: return 0
+            if '1080' in n: return 1
+            if 'hls' in n or '直链' in n: return 2
+            return 3
+        lines.sort(key=_score)
+        if not lines:
+            # 回退：播放时再解
+            lines = [('720P', page_url)]
         play_url = '#'.join(['%s$%s' % (n, u) for n, u in lines])
         result['list'] = [{
             'vod_id': page_url,
