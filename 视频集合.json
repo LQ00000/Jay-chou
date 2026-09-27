@@ -148,6 +148,69 @@
     }
   },
   {
+    "name": "📺荐片",
+    "api": "https://api.ztcgi.com",
+    "type": 2,
+    "searchable": true,
+    "removeReferer": false,
+    "header": {
+      "User-Agent": "Mozilla/5.0 (Linux; Android 9; V2196A Build/PQ3A.190705.08211809; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/91.0.4472.114 Mobile Safari/537.36;webank/h5face;webank/1.0;netType:NETWORK_WIFI;appVersion:416;packageName:com.jp3.xg3",
+      "Accept": "*/*",
+      "Referer": "https://api.ztcgi.com/"
+    },
+    "categories": [
+      {
+        "name": "电影",
+        "url": "/api/crumb/list?fcate_pid=1&page={{page}}",
+        "url2": "/api/crumb/list?fcate_pid=1&page=1"
+      },
+      {
+        "name": "电视剧",
+        "url": "/api/crumb/list?fcate_pid=2&page={{page}}",
+        "url2": "/api/crumb/list?fcate_pid=2&page=1"
+      },
+      {
+        "name": "动漫",
+        "url": "/api/crumb/list?fcate_pid=3&page={{page}}",
+        "url2": "/api/crumb/list?fcate_pid=3&page=1"
+      },
+      {
+        "name": "综艺",
+        "url": "/api/crumb/list?fcate_pid=4&page={{page}}",
+        "url2": "/api/crumb/list?fcate_pid=4&page=1"
+      }
+    ],
+    "list": {
+      "list": "body@js:function parse(html){try{var j=JSON.parse(html);var arr=j&&j.data?j.data:[];if(!Array.isArray(arr))return'[]';var r=arr.map(function(it){var pic=it.path||it.thumbnail||'';if(pic&&pic.indexOf('http')!==0)pic='https://img.jpcontent.com'+pic;return{vod_id:String(it.id||it.jump_id||''),vod_name:it.title||'',vod_pic:pic,vod_remarks:it.mask||''};});return JSON.stringify(r);}catch(e){return'[]';}parse(__result);",
+      "name": "$.vod_name",
+      "tips": "$.vod_remarks",
+      "coverUrl": "$.vod_pic",
+      "detailUrl": "$.vod_id"
+    },
+    "search": {
+      "url": "/api/v2/search/videoV2?key={{key}}&category_id=88&page=1&pageSize=20",
+      "list": "body@js:function parse(html){try{var j=JSON.parse(html);var arr=j&&j.data?j.data:[];if(!Array.isArray(arr))return'[]';var r=arr.map(function(it){var pic=it.path||it.thumbnail||'';if(pic&&pic.indexOf('http')!==0)pic='https://img.jpcontent.com'+pic;return{vod_id:String(it.id||it.jump_id||''),vod_name:it.title||'',vod_pic:pic,vod_remarks:it.mask||''};});return JSON.stringify(r);}catch(e){return'[]';}parse(__result);",
+      "name": "$.vod_name",
+      "tips": "$.vod_remarks",
+      "coverUrl": "$.vod_pic",
+      "detailUrl": "$.vod_id"
+    },
+    "detail": {
+      "url": "/api/video/detailv2?id={{id}}",
+      "meta": "body@js:function parse(html){try{var j=JSON.parse(html);var d=j&&j.data?j.data:null;if(!d)return'{}';var from=[],urls=[];(d.source_list_source||[]).forEach(function(src){var name=(src.name||'线路').replace(/常规线路/g,'边下边播');var eps=(src.source_list||[]).map(function(ep){return (ep.source_name||'播放')+'$'+(ep.url||'');}).filter(Boolean);if(eps.length){from.push(name);urls.push(eps.join('#'));}});var pic=d.thumbnail||'';if(pic&&pic.indexOf('http')!==0)pic='https://img.jpcontent.com'+pic;return JSON.stringify({vod_id:String(d.id||''),vod_name:d.title||'',vod_pic:pic,vod_year:d.year||'',vod_area:d.area||'',vod_remarks:d.mask||'',vod_content:d.description||'',vod_play_from:from.join('$$$'),vod_play_url:urls.join('$$$')});}catch(e){return'{}';}parse(__result);"
+    },
+    "play": {
+      "list": "body@js:function getPlay(html){var r=[],s={},m,u;var re=/https?:\\/\\/[^\\\"'\\s<>]+\\.(?:m3u8|mp4)[^\\\"'\\s<>]*/gi;while((m=re.exec(html||''))){u=m[0].replace(/&amp;/g,'&');if(s[u])continue;s[u]=1;r.push({name:'播放',url:u});}if(!r.length&&html&&html.indexOf('http')===0)r.push({name:'播放',url:html.trim()});return r.length?JSON.stringify(r):'[]';}getPlay(__result);",
+      "name": "$.name",
+      "url": "$.url"
+    },
+    "toc": {
+      "list": "body@js:function getPlay(html){var r=[],s={},m,u;var re=/https?:\\/\\/[^\\\"'\\s<>]+\\.(?:m3u8|mp4)[^\\\"'\\s<>]*/gi;while((m=re.exec(html||''))){u=m[0].replace(/&amp;/g,'&');if(s[u])continue;s[u]=1;r.push({name:'播放',url:u});}if(!r.length&&html&&html.indexOf('http')===0)r.push({name:'播放',url:html.trim()});return r.length?JSON.stringify(r):'[]';}getPlay(__result);",
+      "name": "$.name",
+      "url": "$.url"
+    }
+  },
+  {
     "name": "📺冠建影视",
     "api": "https://www.pandaguard.com",
     "type": 2,
