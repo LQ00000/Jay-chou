@@ -453,32 +453,41 @@ class Spider(BaseSpider):
         }
 
     def _pick_plays(self, html):
-        """返回 [(清晰度, url), ...]，优先具体分辨率 m3u8（避免 master 相对路径兼容问题）"""
+        """[(清晰度, url)] 只用 h264 具体分辨率，禁止 _TPL_ master / av1 拼接"""
         html = html or ''
         plays = []
         seen = set()
 
-        def add(label, u, front=False):
+        def add(label, u):
             u = (u or '').replace('\\/', '/').replace('\\u002F', '/')
+            # 清理可能粘连的第二段 URL
+            if 'http' in u[8:]:
+                u = u[:u.find('http', 8)]
+            u = u.strip().rstrip('\\').split()[0] if u else ''
             if not u or u in seen or not u.startswith('http'):
                 return
             if re.search(r'preview|sprite|thumb', u, re.I):
                 return
+            # 不要 master 模板
+            if '_TPL_' in u:
+                return
             seen.add(u)
-            if front:
-                plays.insert(0, (label, u))
-            else:
-                plays.append((label, u))
+            plays.append((label, u))
 
-        # 1) 模板 m3u8：.../_TPL_.h264.mp4.m3u8
-        tpl = None
-        m = re.search(r'https?://[^"\'\s<>\\]+_TPL_\.h264\.mp4\.m3u8[^"\'\s<>\\]*', html)
-        if m:
-            tpl = m.group(0).replace('\\/', '/')
-        if not tpl:
-            m = re.search(r'https?://video-nss\.xhcdn\.com/[^"\'\s<>\\]+\.m3u8[^"\'\s<>\\]*', html)
-            if m:
-                tpl = m.group(0).replace('\\/', '/')
+        # 收集所有 m3u8
+        raw_urls = re.findall(r'https?://[^"\'\s<>\\]+\.m3u8[^"\'\s<>\\]*', html)
+        raw_urls = [u.replace('\\/', '/') for u in raw_urls]
+
+        # 优先 h264 模板生成具体分辨率
+        tpl_h264 = None
+        tpl_any = None
+        for u in raw_urls:
+            if '_TPL_' in u and 'h264' in u:
+                tpl_h264 = u
+                break
+            if '_TPL_' in u and not tpl_any:
+                tpl_any = u
+        tpl = tpl_h264 or tpl_any
 
         qualities = []
         if tpl and 'multi=' in tpl:
@@ -488,31 +497,35 @@ class Spider(BaseSpider):
                 qualities = sorted(set(qualities), key=lambda q: int(re.sub(r'\D', '', q) or 0), reverse=True)
 
         if tpl:
-            # 具体分辨率在前（绝对路径，兼容性最好）
+            # 强制用 h264 扩展名
+            base_tpl = re.sub(r'_TPL_\.(?:h264|av1)\.mp4\.m3u8', '_TPL_.h264.mp4.m3u8', tpl)
             for q in (qualities or ['1080p', '720p', '480p', '240p']):
-                add(q.upper() if q[-1] != 'p' else q, tpl.replace('_TPL_', q))
-            # master 放最后作兜底
-            add('HLS自动', tpl)
+                add(q, base_tpl.replace('_TPL_', q))
 
-        # 2) 页面其它 m3u8
-        for u in re.findall(r'https?://[^"\'\s<>\\]+\.m3u8[^"\'\s<>\\]*', html):
-            u = u.replace('\\/', '/')
-            if u in seen:
+        # 页面已展开的具体分辨率 m3u8（非 TPL）
+        for u in raw_urls:
+            if '_TPL_' in u:
                 continue
             qm = re.search(r'(\d+p)', u, re.I)
-            add((qm.group(1) if qm else 'HLS'), u)
+            label = qm.group(1) if qm else 'HLS'
+            # 优先 h264
+            if 'av1' in u.lower() and any('h264' in x for x in raw_urls):
+                continue
+            add(label, u)
 
-        # 3) mp4：只从页面真实链接提取，不臆造
+        # mp4
         for u in re.findall(r'https?://video\d*\.xhcdn\.com/[^"\'\s<>\\]+\d+p\.h264\.mp4[^"\'\s<>\\]*', html):
             u = u.replace('\\/', '/')
             qm = re.search(r'(\d+p)', u, re.I)
             add((qm.group(1) if qm else 'MP4') + ' MP4', u)
 
-        # 4) initials 兜底
         if not plays:
             u = self._pick_play_single(html)
-            if u:
+            if u and '_TPL_' not in u:
                 add('默认', u)
+            elif u and '_TPL_' in u:
+                # 最后兜底：替换成 720p
+                add('720p', re.sub(r'_TPL_\.(?:h264|av1)', '720p.h264', u))
         return plays
 
     def _pick_play_single(self, html):
@@ -542,13 +555,20 @@ class Spider(BaseSpider):
             'Accept': '*/*',
             'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
         }
-        play_id = str(id or '').strip()
-        if play_id.startswith('//'):
-            play_id = 'https:' + play_id
-        if '$' in play_id and not play_id.startswith('http'):
-            play_id = play_id.split('$')[-1].strip()
+
+        def clean(u):
+            u = (u or '').replace('\\/', '/').strip()
+            if 'http' in u[8:]:
+                u = u[:u.find('http', 8)]
+            return u.strip()
 
         def ok(u):
+            u = clean(u)
+            if not u.startswith('http'):
+                return {'parse': 0, 'jx': 0, 'url': '', 'header': header}
+            # 仍是模板则换成 720p
+            if '_TPL_' in u:
+                u = re.sub(r'_TPL_\.(?:h264|av1)', '720p.h264', u)
             return {
                 'parse': 0,
                 'jx': 0,
@@ -557,20 +577,23 @@ class Spider(BaseSpider):
                 'header': header,
             }
 
+        play_id = str(id or '').strip()
+        if play_id.startswith('//'):
+            play_id = 'https:' + play_id
+        if '$' in play_id and not play_id.startswith('http'):
+            play_id = play_id.split('$')[-1].strip()
+        play_id = clean(play_id)
+
         if play_id.startswith('http') and self.isVideoFormat(play_id):
-            if 'xhcdn.com' in play_id:
-                header['Referer'] = self.siteUrl + '/'
-                header['Origin'] = self.siteUrl
             return ok(play_id)
 
-        slug = play_id.split('|')[0].split('$')[-1]
+        slug = play_id.split('|')[0]
         if slug.startswith('videos/'):
             slug = slug[7:]
         slug = slug.split('?')[0].split('#')[0]
         if slug.startswith('http') and self.isVideoFormat(slug):
             return ok(slug)
 
-        # 详情再解
         page = self.siteUrl + '/videos/' + slug
         html = self.fetch(page)
         plays = self._pick_plays(html)
@@ -581,12 +604,6 @@ class Spider(BaseSpider):
                 if flag_s and (flag_s == n or flag_s in n or n in flag_s):
                     chosen = u
                     break
-            # 优先非 master 的具体分辨率
-            if '_TPL_' in chosen and len(plays) > 1:
-                for n, u in plays:
-                    if '_TPL_' not in u:
-                        chosen = u
-                        break
             return ok(chosen)
 
         return {

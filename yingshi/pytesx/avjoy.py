@@ -1,8 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 AVJOY https://cn.avjoy.ws
-列表 /videos  详情 /video/{id}/slug  直链 mp4 source
-入口避免根路径 /（500），用 /videos 或 /enter
+列表 /videos /videos/{cat}  详情 /video/{id}/slug  直链 mp4
 """
 import re
 from urllib.parse import quote
@@ -12,6 +11,11 @@ try:
     urllib3.disable_warnings()
 except Exception:
     pass
+
+try:
+    import requests as req_lib
+except Exception:
+    req_lib = None
 
 try:
     from base.spider import Spider as BaseSpider
@@ -35,17 +39,23 @@ UA = (
     '(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
 )
 
+# 与站点 /videos/{slug} 对齐
 CLASS_LIST = [
-    {'type_id': 'videos', 'type_name': '最新视频'},
-    {'type_id': 'search:中文字幕', 'type_name': '中文字幕'},
-    {'type_id': 'search:无码', 'type_name': '无码'},
-    {'type_id': 'search:有码', 'type_name': '有码'},
-    {'type_id': 'search:自拍', 'type_name': '自拍'},
-    {'type_id': 'search:探花', 'type_name': '探花'},
-    {'type_id': 'search:国产', 'type_name': '国产'},
-    {'type_id': 'search:FC2', 'type_name': 'FC2'},
-    {'type_id': 'search:欧美', 'type_name': '欧美'},
-    {'type_id': 'search:韩国', 'type_name': '韩国'},
+    {'type_id': 'videos', 'type_name': '全部影片'},
+    {'type_id': 'videos/amateur', 'type_name': 'Amateur・素人'},
+    {'type_id': 'videos/anal', 'type_name': 'Anal・アナル・肛交'},
+    {'type_id': 'videos/asian', 'type_name': 'Asian・アジア'},
+    {'type_id': 'videos/japan', 'type_name': 'Japan・日本'},
+    {'type_id': 'videos/jav', 'type_name': 'JAV・日本AV'},
+    {'type_id': 'videos/china', 'type_name': 'China・中國'},
+    {'type_id': 'videos/korea', 'type_name': 'Korea・韓國'},
+    {'type_id': 'videos/big-tits', 'type_name': 'Big Tits・巨乳'},
+    {'type_id': 'videos/mature', 'type_name': 'Mature・熟女'},
+    {'type_id': 'videos/wife', 'type_name': 'Wife・人妻'},
+    {'type_id': 'videos/teen', 'type_name': 'Teen・少女'},
+    {'type_id': 'videos/uncensored', 'type_name': '無碼'},
+    {'type_id': 'videos/chinese-subtitle', 'type_name': '中文字幕'},
+    {'type_id': 'videos/sm', 'type_name': 'SM'},
 ]
 
 
@@ -81,35 +91,62 @@ class Spider(BaseSpider):
         return {
             'User-Agent': self._ua,
             'Referer': self.host + '/videos',
-            'Accept-Language': 'zh-CN,zh;q=0.9',
+            'Accept': 'text/html,application/xhtml+xml,*/*;q=0.8',
+            'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
         }
 
-    def _fetch(self, url, timeout=20):
+    def _fetch(self, url, timeout=25):
         if url.startswith('/'):
             url = self.host + url
-        try:
-            r = self.fetch(url, headers=self._headers(), timeout=timeout)
-            return getattr(r, 'text', '') or ''
-        except Exception:
-            return ''
+        if url.rstrip('/').endswith('avjoy.ws'):
+            url = self.host + '/videos'
+        text = ''
+        if req_lib is not None:
+            for t in (timeout, 35):
+                try:
+                    r = req_lib.get(url, headers=self._headers(), timeout=t, verify=False)
+                    if r.status_code == 200 and r.text and len(r.text) > 800:
+                        text = r.text
+                        break
+                except Exception:
+                    continue
+        if not text:
+            try:
+                r = self.fetch(url, headers=self._headers(), timeout=timeout)
+                text = getattr(r, 'text', '') or ''
+            except Exception:
+                text = ''
+        # 转义 HTML 还原
+        if text and ('\\/video' in text or 'href=\\"' in text):
+            text = (
+                text.replace('\\/', '/')
+                .replace('\\"', '"')
+                .replace('\\n', '\n')
+                .replace('\\t', '\t')
+            )
+        return text
 
     def _parse_list(self, html):
         results, seen = [], set()
         if not html:
             return results
-        for m in re.finditer(
-            r'href=["\'](/video/(\d+)/([^"\']+))["\']',
-            html, re.I
-        ):
+        # /video/{id}/{slug}
+        for m in re.finditer(r'href=["\'](/video/(\d+)/([^"\'?#]+))["\']', html, re.I):
             path, vid, slug = m.group(1), m.group(2), m.group(3)
             if vid in seen:
                 continue
             seen.add(vid)
-            block = html[max(0, m.start() - 100): m.start() + 500]
+            block = html[max(0, m.start() - 150): m.start() + 600]
             pic = ''
-            pm = re.search(r'(?:data-src|src)=["\'](https?://[^"\']+\.(?:jpg|jpeg|png|webp)[^"\']*)["\']', block, re.I)
+            pm = re.search(
+                r'(?:data-src|src)=["\'](https?://[^"\']+\.(?:jpg|jpeg|png|webp)[^"\']*)["\']',
+                block, re.I
+            )
             if not pm:
-                pm = re.search(r'(?:data-src|src)=["\'](/[^"\']+\.(?:jpg|jpeg|png|webp)[^"\']*)["\']', block, re.I)
+                pm = re.search(
+                    r'(?:data-src|src)=["\'](/[^"\']+\.(?:jpg|jpeg|png|webp)[^"\']*)["\']',
+                    block, re.I
+                )
             if pm:
                 pic = pm.group(1)
                 if pic.startswith('/'):
@@ -137,24 +174,33 @@ class Spider(BaseSpider):
             page = max(1, int(str(pg) or 1))
         except Exception:
             page = 1
-        tid = str(tid or 'videos').strip()
+        tid = str(tid or 'videos').strip().lstrip('/')
+        # 兼容旧 search:xxx
         if tid.startswith('search:'):
             key = tid.split(':', 1)[1]
             url = '%s/search/videos/%s' % (self.host, quote(key))
-            if page > 1:
-                url += '?page=%d' % page
+        elif tid.startswith('videos/') or tid == 'videos':
+            url = self.host + '/' + tid
         else:
-            url = self.host + '/videos'
-            if page > 1:
-                url += '?page=%d' % page
+            # 纯 slug → /videos/{slug}
+            url = self.host + '/videos/' + tid
+
+        if page > 1:
+            url += ('&' if '?' in url else '?') + 'page=%d' % page
+
         html = self._fetch(url)
         vods = self._parse_list(html)
+        # 空则回退全部
+        if len(vods) < 3 and tid not in ('videos',):
+            html = self._fetch(self.host + '/videos')
+            vods = self._parse_list(html)
+
         return {
             'list': vods,
             'page': page,
             'pagecount': page + 1 if len(vods) >= 12 else page,
             'limit': 24,
-            'total': 9999,
+            'total': 9999 if vods else 0,
         }
 
     def searchContent(self, key, quick=False, pg='1'):
@@ -171,7 +217,7 @@ class Spider(BaseSpider):
             'page': page,
             'pagecount': page + 1 if len(vods) >= 12 else page,
             'limit': 24,
-            'total': 9999,
+            'total': 9999 if vods else 0,
         }
 
     def detailContent(self, ids):
@@ -225,17 +271,26 @@ class Spider(BaseSpider):
         header = {
             'User-Agent': self._ua,
             'Referer': self.host + '/',
+            'Origin': self.host,
         }
         if re.search(r'\.(m3u8|mp4)(\?|$)', url, re.I):
             return {'parse': 0, 'jx': 0, 'url': url, 'header': header}
+        # 详情页再解
+        if '/video/' in url or url.startswith('http'):
+            d = self.detailContent([url])
+            item = (d.get('list') or [{}])[0]
+            pu = item.get('vod_play_url') or ''
+            for part in pu.split('$$$'):
+                if '$' in part:
+                    u = part.split('$', 1)[1]
+                    if re.search(r'\.(m3u8|mp4)', u, re.I):
+                        return {'parse': 0, 'jx': 0, 'url': u, 'header': header}
         return {'parse': 0, 'jx': 0, 'url': '', 'header': header}
 
 
 if __name__ == '__main__':
     sp = Spider()
     sp.init()
-    r = sp.categoryContent('videos', 1)
-    print('list', len(r.get('list') or []))
-    if r.get('list'):
-        d = sp.detailContent([r['list'][0]['vod_id']])
-        print(d)
+    for tid in ['videos', 'videos/amateur', 'videos/anal']:
+        r = sp.categoryContent(tid, 1)
+        print(tid, len(r.get('list') or []), (r.get('list') or [{}])[0].get('vod_name', '')[:40])
