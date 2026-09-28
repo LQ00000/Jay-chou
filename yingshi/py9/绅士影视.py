@@ -55,12 +55,12 @@ SOURCES = [
 
 PARSERS = [
     # 官方聚合 / 腾爱优直链解析（优先）
-    {"name": "huaqi", "api": "https://api.huaqi.pro/api/?key=5bd0db7c858ba9f999373450f3651af7&url="},
-    {"name": "12321", "api": "https://test1.12321app.com/daoliansiquanjia.php?url="},
     {"name": "组豪富英", "api": "https://coffee-5c93e1f751eb.edge.tvapp.eu.org:31000/api/?key=6f8622b2-8402-43c9-ae29-0adaa292bc71&url="},
     {"name": "组4K·P", "api": "https://jx.meilinvps.com/api/?key=7dba17e4cc9b887faf7afaf9a20fd391&url="},
     {"name": "组4K·C", "api": "https://vip1.123jx.vip/api/?key=f60311e9bc7c1eac9dcaf5e336647b65&url="},
     {"name": "组C4K·E", "api": "http://175.24.181.180:5000/api/jiexi/common?Key=Dg3tqWmzSgcKGlZY2c&url="},
+  {"name": "huaqi", "api": "https://api.huaqi.pro/api/?key=5bd0db7c858ba9f999373450f3651af7&url="},
+    {"name": "12321", "api": "https://test1.12321app.com/daoliansiquanjia.php?url="},
 ]
 
 RANK = {"4K": 5, "2K": 4, "1080P": 3, "720P": 2, "HD": 1, "": 0}
