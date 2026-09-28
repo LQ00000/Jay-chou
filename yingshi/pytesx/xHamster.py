@@ -26,6 +26,12 @@ except ImportError:
 class Spider(BaseSpider):
     def __init__(self):
         self.siteUrl = 'https://zh.xhamster1.pw'
+        self.hosts = [
+            'https://zh.xhamster1.pw',
+            'https://xhamster1.pw',
+            'https://zh.xhamster.com',
+            'https://xhamster.com',
+        ]
         self.userAgent = (
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 '
             '(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
@@ -91,23 +97,52 @@ class Spider(BaseSpider):
                 'Referer': self.siteUrl + '/',
                 'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
                 'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
-                'Cookie': 'age_verified=1; cookie_accept=1; locale=zh; ts_popunder=1',
+                'Cookie': 'age_verified=1; cookie_accept=1; locale=zh; ts_popunder=1; av_ageverif_attempts=0',
+                'Cache-Control': 'no-cache',
             }
-        try:
-            if requests:
-                resp = requests.get(url, headers=headers, timeout=20, verify=False)
-                if resp.status_code == 200:
-                    return resp.text
-            from urllib.request import Request, urlopen
-            import ssl
-            ctx = ssl.create_default_context()
-            ctx.check_hostname = False
-            ctx.verify_mode = ssl.CERT_NONE
-            raw = urlopen(Request(url, headers=headers), timeout=20, context=ctx).read()
-            return raw.decode('utf-8', 'ignore')
-        except Exception as e:
-            print('请求失败: %s, %s' % (url, e))
-            return ''
+        urls = [url]
+        # 同路径换镜像域名重试
+        for h in getattr(self, 'hosts', [self.siteUrl]):
+            if url.startswith(self.siteUrl):
+                alt = h + url[len(self.siteUrl):]
+                if alt not in urls:
+                    urls.append(alt)
+            elif url.startswith('http'):
+                break
+            else:
+                alt = h + (url if url.startswith('/') else '/' + url)
+                if alt not in urls:
+                    urls.append(alt)
+        last_err = ''
+        for u in urls:
+            try:
+                if requests:
+                    resp = requests.get(u, headers=headers, timeout=22, verify=False)
+                    if resp.status_code == 200 and len(resp.text) > 3000:
+                        # 成功则固定当前 host
+                        for h in getattr(self, 'hosts', []):
+                            if u.startswith(h):
+                                self.siteUrl = h
+                                break
+                        return resp.text
+                from urllib.request import Request, urlopen
+                import ssl
+                ctx = ssl.create_default_context()
+                ctx.check_hostname = False
+                ctx.verify_mode = ssl.CERT_NONE
+                raw = urlopen(Request(u, headers=headers), timeout=22, context=ctx).read()
+                text = raw.decode('utf-8', 'ignore')
+                if len(text) > 3000:
+                    for h in getattr(self, 'hosts', []):
+                        if u.startswith(h):
+                            self.siteUrl = h
+                            break
+                    return text
+            except Exception as e:
+                last_err = str(e)
+                continue
+        print('请求失败: %s, %s' % (url, last_err))
+        return ''
 
     def _abs(self, u):
         if not u:
@@ -245,7 +280,8 @@ class Spider(BaseSpider):
         html = html or ''
         data = self._extract_initials(html)
         videos = self._videos_from_initials(data)
-        if len(videos) >= 8:
+        # initials 可能只解析部分；仍用 HTML 补全
+        if len(videos) >= 40:
             return videos
         # HTML 兜底：多套正则
         seen = {v['vod_id'] for v in videos}
@@ -310,7 +346,7 @@ class Spider(BaseSpider):
 
     def homeContent(self, filter):
         classes = [{'type_id': k, 'type_name': v['name']} for k, v in self.channels.items()]
-        return {'class': classes, 'filters': {}}
+        return {'class': classes, 'list': [], 'filters': {}}
 
     def homeVideoContent(self):
         html = self.fetch(self._page_url('/newest', 1))
@@ -318,9 +354,28 @@ class Spider(BaseSpider):
 
     def categoryContent(self, tid, pg, filter, extend):
         pg = int(pg or 1)
-        info = self.channels.get(str(tid), {'path': '/' + str(tid or 'newest')})
-        html = self.fetch(self._page_url(info.get('path') or '/newest', pg))
-        videos = self._parse_list(html)
+        tid = str(tid or 'newest').strip()
+        info = self.channels.get(tid, {'path': '/' + tid})
+        path = info.get('path') or '/newest'
+        # 多路径尝试：原路径 / 去掉 search 前缀变体
+        paths = [path]
+        if path.startswith('/search/'):
+            # 搜索词也可能用空格
+            alt = path.replace('+', '%20')
+            if alt not in paths:
+                paths.append(alt)
+        videos, html = [], ''
+        for p in paths:
+            html = self.fetch(self._page_url(p, pg))
+            videos = self._parse_list(html)
+            if len(videos) >= 8:
+                break
+        # 仍空：再试一次首页结构兜底
+        if len(videos) < 5 and tid not in ('newest', 'best'):
+            html2 = self.fetch(self._page_url('/newest', 1))
+            videos2 = self._parse_list(html2)
+            if len(videos2) > len(videos):
+                videos, html = videos2, html2
         pagecount = self._pagecount_from(html, pg, len(videos))
         return {
             'list': videos,
@@ -377,63 +432,97 @@ class Spider(BaseSpider):
         pm = re.search(r'og:image["\']\s+content=["\']([^"\']+)', html or '', re.I)
         if pm:
             pic = self._abs(pm.group(1))
-        play = self._pick_play(html)
+        plays = self._pick_plays(html)
+        if plays:
+            froms = [n for n, _ in plays]
+            urls = ['正片$%s' % u for _, u in plays]
+            play_from = '$$$'.join(froms)
+            play_url = '$$$'.join(urls)
+        else:
+            play_from = 'xHamster'
+            play_url = '正片$%s' % slug
         return {
             'list': [{
                 'vod_id': slug,
                 'vod_name': title,
                 'vod_pic': pic,
                 'vod_content': title,
-                'vod_play_from': 'xHamster',
-                'vod_play_url': '正片$%s' % (play or slug),
+                'vod_play_from': play_from,
+                'vod_play_url': play_url,
             }]
         }
 
-    def _pick_play(self, html):
+    def _pick_plays(self, html):
+        """返回 [(清晰度, url), ...]，优先具体分辨率 m3u8（避免 master 相对路径兼容问题）"""
+        html = html or ''
+        plays = []
+        seen = set()
+
+        def add(label, u, front=False):
+            u = (u or '').replace('\\/', '/').replace('\\u002F', '/')
+            if not u or u in seen or not u.startswith('http'):
+                return
+            if re.search(r'preview|sprite|thumb', u, re.I):
+                return
+            seen.add(u)
+            if front:
+                plays.insert(0, (label, u))
+            else:
+                plays.append((label, u))
+
+        # 1) 模板 m3u8：.../_TPL_.h264.mp4.m3u8
+        tpl = None
+        m = re.search(r'https?://[^"\'\s<>\\]+_TPL_\.h264\.mp4\.m3u8[^"\'\s<>\\]*', html)
+        if m:
+            tpl = m.group(0).replace('\\/', '/')
+        if not tpl:
+            m = re.search(r'https?://video-nss\.xhcdn\.com/[^"\'\s<>\\]+\.m3u8[^"\'\s<>\\]*', html)
+            if m:
+                tpl = m.group(0).replace('\\/', '/')
+
+        qualities = []
+        if tpl and 'multi=' in tpl:
+            mm = re.search(r'multi=([^/&]+)', tpl)
+            if mm:
+                qualities = re.findall(r'(\d+p)', mm.group(1), re.I)
+                qualities = sorted(set(qualities), key=lambda q: int(re.sub(r'\D', '', q) or 0), reverse=True)
+
+        if tpl:
+            # 具体分辨率在前（绝对路径，兼容性最好）
+            for q in (qualities or ['1080p', '720p', '480p', '240p']):
+                add(q.upper() if q[-1] != 'p' else q, tpl.replace('_TPL_', q))
+            # master 放最后作兜底
+            add('HLS自动', tpl)
+
+        # 2) 页面其它 m3u8
+        for u in re.findall(r'https?://[^"\'\s<>\\]+\.m3u8[^"\'\s<>\\]*', html):
+            u = u.replace('\\/', '/')
+            if u in seen:
+                continue
+            qm = re.search(r'(\d+p)', u, re.I)
+            add((qm.group(1) if qm else 'HLS'), u)
+
+        # 3) mp4：只从页面真实链接提取，不臆造
+        for u in re.findall(r'https?://video\d*\.xhcdn\.com/[^"\'\s<>\\]+\d+p\.h264\.mp4[^"\'\s<>\\]*', html):
+            u = u.replace('\\/', '/')
+            qm = re.search(r'(\d+p)', u, re.I)
+            add((qm.group(1) if qm else 'MP4') + ' MP4', u)
+
+        # 4) initials 兜底
+        if not plays:
+            u = self._pick_play_single(html)
+            if u:
+                add('默认', u)
+        return plays
+
+    def _pick_play_single(self, html):
         html = html or ''
         m3 = re.search(r'https?://[^\s"\']+\.m3u8[^\s"\']*', html)
         if m3:
             return m3.group(0).replace('\\/', '/')
-        # initials
-        m = re.search(r'window\.initials\s*=\s*(\{[\s\S]+?\})\s*;', html)
+        m = re.search(r'https?://video-nss\.xhcdn\.com/[^"\']+', html)
         if m:
-            try:
-                data = json.loads(m.group(1).replace('\\/', '/'))
-                xps = (data.get('xplayerSettings') or {}).get('sources') or {}
-                hls = xps.get('hls') or {}
-                if isinstance(hls, dict):
-                    u = hls.get('url') or hls.get('fallback') or ''
-                    if u and self.isVideoFormat(u):
-                        return u.replace('\\/', '/')
-                elif isinstance(hls, str) and self.isVideoFormat(hls):
-                    return hls
-                std = xps.get('standard') or {}
-                best, best_q = '', 0
-                if isinstance(std, dict):
-                    for k, lst in std.items():
-                        if not isinstance(lst, list):
-                            continue
-                        for item in lst:
-                            if not isinstance(item, dict):
-                                continue
-                            u = item.get('url') or item.get('fallback') or ''
-                            q = int(re.sub(r'\D', '', str(item.get('quality') or item.get('label') or k)) or 0)
-                            if u and self.isVideoFormat(u) and q >= best_q:
-                                best, best_q = u, q
-                if best:
-                    return best.replace('\\/', '/')
-                sources = (data.get('videoModel') or {}).get('sources') or {}
-                for fmt in ('h264', 'av1', 'mp4'):
-                    dict_q = sources.get(fmt) or {}
-                    if not isinstance(dict_q, dict):
-                        continue
-                    for q in sorted(dict_q.keys(), key=lambda x: int(re.sub(r'\D', '', str(x)) or 0), reverse=True):
-                        item = dict_q[q]
-                        u = item if isinstance(item, str) else (item.get('url') or item.get('fallback') if isinstance(item, dict) else '')
-                        if u and self.isVideoFormat(u):
-                            return u.replace('\\/', '/')
-            except Exception:
-                pass
+            return m.group(0).replace('\\/', '/')
         for key in ('h264', 'av1', 'videoUrl', 'fallback', 'hls'):
             m = re.search(r'"%s"\s*:\s*"(https?:[^"]+)"' % key, html)
             if m:
@@ -445,30 +534,68 @@ class Spider(BaseSpider):
             return m.group(1).replace('\\/', '/')
         return ''
 
-    def playerContent(self, flag, id, vipFlags):
+    def playerContent(self, flag, id, vipFlags=None):
         header = {
             'User-Agent': self.userAgent,
             'Referer': self.siteUrl + '/',
             'Origin': self.siteUrl,
+            'Accept': '*/*',
+            'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
         }
-        play_id = str(id or '')
+        play_id = str(id or '').strip()
+        if play_id.startswith('//'):
+            play_id = 'https:' + play_id
+        if '$' in play_id and not play_id.startswith('http'):
+            play_id = play_id.split('$')[-1].strip()
+
+        def ok(u):
+            return {
+                'parse': 0,
+                'jx': 0,
+                'url': u,
+                'playUrl': u,
+                'header': header,
+            }
+
         if play_id.startswith('http') and self.isVideoFormat(play_id):
-            return {'parse': 0, 'url': play_id, 'playUrl': play_id, 'header': header}
+            if 'xhcdn.com' in play_id:
+                header['Referer'] = self.siteUrl + '/'
+                header['Origin'] = self.siteUrl
+            return ok(play_id)
+
         slug = play_id.split('|')[0].split('$')[-1]
         if slug.startswith('videos/'):
             slug = slug[7:]
         slug = slug.split('?')[0].split('#')[0]
         if slug.startswith('http') and self.isVideoFormat(slug):
-            return {'parse': 0, 'url': slug, 'playUrl': slug, 'header': header}
+            return ok(slug)
+
+        # 详情再解
         page = self.siteUrl + '/videos/' + slug
         html = self.fetch(page)
-        url = self._pick_play(html)
-        if url:
-            return {
-                'parse': 0 if self.isVideoFormat(url) else 1,
-                'url': url, 'playUrl': url, 'header': header,
-            }
-        return {'parse': 1, 'jx': '1', 'url': page, 'playUrl': page, 'header': header}
+        plays = self._pick_plays(html)
+        if plays:
+            flag_s = str(flag or '')
+            chosen = plays[0][1]
+            for n, u in plays:
+                if flag_s and (flag_s == n or flag_s in n or n in flag_s):
+                    chosen = u
+                    break
+            # 优先非 master 的具体分辨率
+            if '_TPL_' in chosen and len(plays) > 1:
+                for n, u in plays:
+                    if '_TPL_' not in u:
+                        chosen = u
+                        break
+            return ok(chosen)
+
+        return {
+            'parse': 1,
+            'jx': '1',
+            'url': page,
+            'playUrl': page,
+            'header': header,
+        }
 
     def isVideoFormat(self, url):
         if not url:
