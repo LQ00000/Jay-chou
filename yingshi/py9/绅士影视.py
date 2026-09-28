@@ -30,6 +30,9 @@ SOURCES = [
     {"name": "极影4K", "q": "4K", "kind": "parse", "parser": "175.24.181.180", "token": "JYY",
      "api": "http://101.201.171.207:802/api.php/provide/vod/?ac=detail&pg=[Page]&wd=[Query]",
      "api2": "http://101.201.171.207:802/api.php/provide/vod/?ac=detail&ids=[ID]"},
+ {"name": "tw采集", "q": "HD", "kind": "parse", "parser": "", "token": "",
+     "api": "http://cj.10010888.xyz/api.php/provide/vod/?ac=detail&pg=[Page]&wd=[Query]",
+     "api2": "http://cj.10010888.xyz/api.php/provide/vod/?ac=detail&ids=[ID]"},
     {"name": "绅士官采", "q": "HD", "kind": "parse", "parser": "", "token": "",
      "api": "https://cj.jusj.top/api.php/provide/vod/?ac=detail&pg=[Page]&wd=[Query]",
      "api2": "https://cj.jusj.top/api.php/provide/vod/?ac=detail&ids=[ID]"},
@@ -51,6 +54,9 @@ SOURCES = [
 ]
 
 PARSERS = [
+    # 官方聚合 / 腾爱优直链解析（优先）
+    {"name": "huaqi", "api": "https://api.huaqi.pro/api/?key=5bd0db7c858ba9f999373450f3651af7&url="},
+    {"name": "12321", "api": "https://test1.12321app.com/daoliansiquanjia.php?url="},
     {"name": "组豪富英", "api": "https://coffee-5c93e1f751eb.edge.tvapp.eu.org:31000/api/?key=6f8622b2-8402-43c9-ae29-0adaa292bc71&url="},
     {"name": "组4K·P", "api": "https://jx.meilinvps.com/api/?key=7dba17e4cc9b887faf7afaf9a20fd391&url="},
     {"name": "组4K·C", "api": "https://vip1.123jx.vip/api/?key=f60311e9bc7c1eac9dcaf5e336647b65&url="},
@@ -628,26 +634,61 @@ class Spider(object):
         return {"page": page, "pagecount": page + 1, "limit": len(uniq), "total": len(uniq), "list": uniq}
 
     def _parse_url(self, token_url, prefer=""):
+        from urllib.parse import quote
         cands = []
         if prefer:
             for p in PARSERS:
-                if prefer in p["api"]:
+                if prefer in p["api"] or prefer in p.get("name", ""):
                     cands.append(p)
+        # 页面链接优先用 huaqi / 12321
+        if re.search(r"https?://", token_url or "") and not re.search(r"\.(m3u8|mp4)(\?|$)", token_url or "", re.I):
+            for p in PARSERS:
+                if p["name"] in ("huaqi", "12321") and p not in cands:
+                    cands.insert(0, p)
         cands += [p for p in PARSERS if p not in cands]
+        urls_try = [token_url]
+        try:
+            enc = quote(token_url, safe="")
+            if enc != token_url:
+                urls_try.append(enc)
+        except Exception:
+            pass
         for p in cands:
-            try:
-                txt = self._get(p["api"] + token_url, timeout=15)
-                if not txt:
+            for tu in urls_try:
+                try:
+                    txt = self._get(p["api"] + tu, timeout=15)
+                    if not txt:
+                        continue
+                    try:
+                        import json as _json
+                        data = _json.loads(txt)
+                        if isinstance(data, dict):
+                            code = data.get("code")
+                            ok = True
+                            if code is not None:
+                                try:
+                                    ok = int(code) in (200, 0, 1, 2000)
+                                except Exception:
+                                    ok = True
+                            if ok:
+                                for k in ("url", "Url", "URL", "play_url", "play", "m3u8", "data"):
+                                    v = data.get(k)
+                                    if isinstance(v, dict):
+                                        v = v.get("url") or v.get("play")
+                                    if isinstance(v, str) and v.startswith("http"):
+                                        if re.search(r"\.(m3u8|mp4)", v, re.I) or "http" in v:
+                                            return v.replace("\\/", "/")
+                    except Exception:
+                        pass
+                    for m in re.finditer(r'"(?:url|Url|URL|play_url|data|play)"\s*:\s*"([^"]+)"', txt):
+                        v = m.group(1).replace("\\/", "/")
+                        if re.search(r"\.(m3u8|mp4)", v, re.I) or v.startswith("http"):
+                            return v
+                    m = re.search(r"https?://[^\"'\s<>]+?\.(?:m3u8|mp4)[^\"'\s<>]*", txt.replace("\\/", "/"))
+                    if m:
+                        return m.group(0)
+                except Exception:
                     continue
-                for m in re.finditer(r'"(?:url|Url|URL|play_url|data)"\s*:\s*"([^"]+)"', txt):
-                    v = m.group(1).replace("\\/", "/")
-                    if re.search(r"\.(m3u8|mp4)", v, re.I):
-                        return v
-                m = re.search(r"https?://[^\"'\s<>]+?\.(?:m3u8|mp4)[^\"'\s<>]*", txt.replace("\\/", "/"))
-                if m:
-                    return m.group(0)
-            except Exception:
-                continue
         return ""
 
     def playerContent(self, flag, id, vipFlags=None):
