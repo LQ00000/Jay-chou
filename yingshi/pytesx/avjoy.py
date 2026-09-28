@@ -1,9 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-AVJOY https://cn.avjoy.ws  兼容影视仓/OK影视
+AVJOY https://cn.avjoy.ws
+兼容影视仓 / OK影视
+分类: /videos  /videos/{slug}
+播放: 页面 <source> 直链 mp4
 """
 import re
-import json
 from urllib.parse import quote
 
 try:
@@ -40,10 +42,11 @@ HOSTS = [
     'https://avjoy.ws',
 ]
 UA = (
-    'Mozilla/5.0 (Linux; Android 12; SM-G991B) AppleWebKit/537.36 '
+    'Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 '
     '(KHTML, like Gecko) Chrome/131.0.0.0 Mobile Safari/537.36'
 )
 
+# type_id 必须与站点路径一致
 CLASS_LIST = [
     {'type_id': 'videos', 'type_name': '全部影片'},
     {'type_id': 'videos/amateur', 'type_name': 'Amateur・素人'},
@@ -96,49 +99,57 @@ class Spider(BaseSpider):
             'Referer': self.host + '/videos',
             'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
             'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+            'Cache-Control': 'no-cache',
         }
 
     def _fetch(self, url, timeout=25):
+        if not url:
+            return ''
         if url.startswith('/'):
             url = self.host + url
-        # 禁止根路径
+        # 根路径会异常，改走 /videos
         for h in HOSTS:
             if url.rstrip('/') == h.rstrip('/'):
                 url = h + '/videos'
                 break
-        hosts_try = [self.host] + [x for x in HOSTS if x != self.host]
-        path = url
-        for h in hosts_try:
-            if url.startswith('http'):
-                # 换 host
-                for hh in HOSTS:
-                    if url.startswith(hh):
-                        path = h + url[len(hh):]
-                        break
-                else:
-                    path = url
-            else:
-                path = h + (url if url.startswith('/') else '/' + url)
+
+        tried = []
+        # 当前 host 优先，再换镜像
+        host_order = [self.host] + [x for x in HOSTS if x != self.host]
+        for h in host_order:
+            u = url
+            for hh in HOSTS:
+                if url.startswith(hh):
+                    u = h + url[len(hh):]
+                    break
+            if u in tried:
+                continue
+            tried.append(u)
             text = ''
             if req_lib is not None:
                 try:
-                    r = req_lib.get(path, headers=self._headers(), timeout=timeout, verify=False)
-                    if r.status_code == 200 and len(r.text) > 800:
-                        self.host = h
+                    r = req_lib.get(u, headers=self._headers(), timeout=timeout, verify=False)
+                    if r.status_code == 200 and r.text and len(r.text) > 1000:
                         text = r.text
+                        self.host = h
                 except Exception:
                     text = ''
             if not text:
                 try:
-                    r = self.fetch(path, headers=self._headers(), timeout=timeout)
+                    r = self.fetch(u, headers=self._headers(), timeout=timeout)
                     text = getattr(r, 'text', '') or ''
-                    if len(text) > 800:
+                    if len(text) > 1000:
                         self.host = h
                 except Exception:
                     text = ''
-            if text and len(text) > 800:
+            if text and len(text) > 1000:
                 if '\\/video' in text or 'href=\\"' in text:
-                    text = text.replace('\\/', '/').replace('\\"', '"').replace('\\n', '\n')
+                    text = (
+                        text.replace('\\/', '/')
+                        .replace('\\"', '"')
+                        .replace("\\'", "'")
+                        .replace('\\n', '\n')
+                    )
                 return text
         return ''
 
@@ -151,7 +162,7 @@ class Spider(BaseSpider):
             if vid in seen:
                 continue
             seen.add(vid)
-            block = html[max(0, m.start() - 200): m.start() + 700]
+            block = html[max(0, m.start() - 250): m.start() + 800]
             pic = ''
             pm = re.search(
                 r'(?:data-src|src)=["\']((?:https?:)?//?[^"\']+\.(?:jpg|jpeg|png|webp)[^"\']*)["\']',
@@ -167,6 +178,13 @@ class Spider(BaseSpider):
             tm = re.search(r'(?:alt|title)=["\']([^"\']{2,120})["\']', block)
             if tm:
                 title = tm.group(1).strip()
+            # 标题区文本
+            if title == slug.replace('-', ' '):
+                tm2 = re.search(r'>\s*([^<]{4,80})\s*<', block[block.find(path) + len(path):] if path in block else block)
+                if tm2 and len(tm2.group(1).strip()) > 3:
+                    t = tm2.group(1).strip()
+                    if 'http' not in t and 'src' not in t:
+                        title = t
             results.append({
                 'vod_id': path,
                 'vod_name': title[:120],
@@ -176,15 +194,19 @@ class Spider(BaseSpider):
         return results
 
     def homeContent(self, filter=False):
-        # 同时带一页列表，部分壳只读 list
+        # 带 list，打开源即有数据
         try:
-            lst = self._parse_list(self._fetch(self.host + '/videos'))[:20]
+            lst = self._parse_list(self._fetch('/videos'))[:30]
         except Exception:
             lst = []
-        return {'class': list(CLASS_LIST), 'list': lst, 'filters': {}}
+        return {
+            'class': list(CLASS_LIST),
+            'list': lst,
+            'filters': {},
+        }
 
     def homeVideoContent(self):
-        return {'list': self._parse_list(self._fetch(self.host + '/videos'))[:24]}
+        return {'list': self._parse_list(self._fetch('/videos'))[:30]}
 
     def categoryContent(self, tid, pg=1, filter=False, extend=None):
         try:
@@ -192,28 +214,46 @@ class Spider(BaseSpider):
         except Exception:
             page = 1
         tid = str(tid or 'videos').strip().lstrip('/')
+
+        # 名称别名 → 路径
+        aliases = {
+            '全部影片': 'videos', '全部': 'videos', 'all': 'videos',
+            'amateur': 'videos/amateur', '素人': 'videos/amateur',
+            'anal': 'videos/anal',
+            'asian': 'videos/asian',
+            'japan': 'videos/japan', 'jav': 'videos/jav',
+            'china': 'videos/china', 'korea': 'videos/korea',
+            'uncensored': 'videos/uncensored', '無碼': 'videos/uncensored', '无码': 'videos/uncensored',
+        }
+        if tid in aliases:
+            tid = aliases[tid]
+
         if tid.startswith('search:'):
             key = tid.split(':', 1)[1]
-            url = '%s/search/videos/%s' % (self.host, quote(key))
-        elif tid in ('videos', 'all', '全部', '全部影片'):
-            url = self.host + '/videos'
+            url = '/search/videos/' + quote(key)
+        elif tid == 'videos' or tid == '':
+            url = '/videos'
         elif tid.startswith('videos/'):
-            url = self.host + '/' + tid
+            url = '/' + tid
         else:
-            url = self.host + '/videos/' + tid
+            url = '/videos/' + tid
+
         if page > 1:
             url += ('&' if '?' in url else '?') + 'page=%d' % page
+
         html = self._fetch(url)
         vods = self._parse_list(html)
         if len(vods) < 2:
-            html = self._fetch(self.host + '/videos')
+            # 兜底全部
+            html = self._fetch('/videos')
             vods = self._parse_list(html)
+
         return {
             'list': vods or [],
             'page': page,
             'pagecount': page + 1 if len(vods) >= 12 else max(page, 1),
             'limit': 24,
-            'total': max(len(vods), 1) * 50 if vods else 0,
+            'total': 9999 if vods else 0,
         }
 
     def searchContent(self, key, quick=False, pg=1):
@@ -221,7 +261,8 @@ class Spider(BaseSpider):
             page = max(1, int(str(pg) or 1))
         except Exception:
             page = 1
-        url = '%s/search/videos/%s' % (self.host, quote(str(key or '').strip()))
+        q = quote(str(key or '').strip())
+        url = '/search/videos/' + q
         if page > 1:
             url += '?page=%d' % page
         vods = self._parse_list(self._fetch(url))
@@ -247,19 +288,17 @@ class Spider(BaseSpider):
         m = re.search(r'og:image["\']\s+content=["\']([^"\']+)', html or '', re.I)
         if m:
             pic = m.group(1)
-        plays = []
-        seen = set()
+        plays, seen = [], set()
         for m in re.finditer(r'<source[^>]+src=["\']([^"\']+)["\']', html or '', re.I):
             u = m.group(1)
             if not u.startswith('http') or u in seen:
                 continue
             seen.add(u)
-            label = 'MP4'
-            qm = re.search(r'(\d{3,4})p|_([Hh][Dd])', u)
-            if qm:
-                label = (qm.group(1) or qm.group(2) or 'HD').upper()
-                if label == 'HD':
-                    label = '高清'
+            label = '高清'
+            if re.search(r'(\d{3,4})p', u, re.I):
+                label = re.search(r'(\d{3,4})p', u, re.I).group(1) + 'P'
+            elif re.search(r'_HD|_hd', u):
+                label = '高清'
             plays.append((label, u))
         for m in re.finditer(r'(https?://[^"\'\s<>]+\.(?:mp4|m3u8)[^"\'\s<>]*)', html or '', re.I):
             u = m.group(1)
@@ -268,12 +307,10 @@ class Spider(BaseSpider):
             seen.add(u)
             plays.append(('直链', u))
         if plays:
-            # 单线路多清晰度用 # 分隔，兼容部分壳
+            play_from = 'AVJOY'
             if len(plays) == 1:
-                play_from = 'AVJOY'
                 play_url = '正片$%s' % plays[0][1]
             else:
-                play_from = 'AVJOY'
                 play_url = '#'.join(['%s$%s' % (n, u) for n, u in plays])
         else:
             play_from = 'AVJOY'
@@ -302,7 +339,6 @@ class Spider(BaseSpider):
             d = self.detailContent([url])
             item = (d.get('list') or [{}])[0]
             pu = item.get('vod_play_url') or ''
-            # 支持 # 与 $$$
             for part in re.split(r'\$\$\$|#', pu):
                 if '$' in part:
                     u = part.split('$', 1)[-1]
@@ -314,10 +350,11 @@ class Spider(BaseSpider):
 if __name__ == '__main__':
     sp = Spider()
     sp.init()
-    print('home', len(sp.homeContent().get('class') or []))
+    h = sp.homeContent()
+    print('class', len(h['class']), 'list', len(h['list']))
     for tid in ['videos', 'videos/amateur', 'amateur']:
         r = sp.categoryContent(tid, 1)
-        print(tid, len(r.get('list') or []))
-        if r.get('list'):
+        print(tid, len(r['list']), r['list'][0]['vod_name'][:30] if r['list'] else '-')
+        if r['list']:
             d = sp.detailContent([r['list'][0]['vod_id']])
-            print('  play', d['list'][0].get('vod_play_url', '')[:80])
+            print('  play', (d['list'][0].get('vod_play_url') or '')[:70])
