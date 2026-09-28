@@ -16,6 +16,11 @@ except Exception:
     pass
 
 try:
+    import requests as req_lib
+except Exception:
+    req_lib = None
+
+try:
     from base.spider import Spider as BaseSpider
 except ImportError:
     class BaseSpider(object):
@@ -74,12 +79,10 @@ class Spider(BaseSpider):
     def destroy(self):
         pass
 
-
     def _fix_txt(self, s):
         if not s:
             return ''
         s = str(s)
-        # 字面 \uXXXX
         if re.search(r'\\u[0-9a-fA-F]{4}', s):
             try:
                 s = s.encode('utf-8').decode('unicode_escape')
@@ -94,25 +97,73 @@ class Spider(BaseSpider):
             'Referer': referer or (self.host + '/index.php'),
             'Accept': 'text/html,application/xhtml+xml,application/json,*/*;q=0.8',
             'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+            'Cache-Control': 'no-cache',
         }
 
-    def _fetch(self, url, timeout=20):
+    def _normalize_html(self, html):
+        """处理被 JSON/反斜杠转义的 HTML"""
+        if not html:
+            return ''
+        # 若整段像 JSON 字符串
+        if html.startswith('"') and '\\n' in html[:200]:
+            try:
+                html = json.loads(html)
+            except Exception:
+                pass
+        if '\\/vodplay' in html or 'href=\\"' in html:
+            html = (
+                html.replace('\\/', '/')
+                .replace('\\"', '"')
+                .replace("\\'", "'")
+                .replace('\\n', '\n')
+                .replace('\\t', '\t')
+                .replace('\\u003c', '<')
+                .replace('\\u003e', '>')
+            )
+            if re.search(r'\\u[0-9a-fA-F]{4}', html):
+                try:
+                    html = html.encode('utf-8').decode('unicode_escape')
+                except Exception:
+                    pass
+        return html
+
+    def _fetch(self, url, timeout=25):
         if url.startswith('/'):
             url = self.host + url
-        try:
-            r = self.fetch(url, headers=self._headers(), timeout=timeout)
-            return getattr(r, 'text', '') or ''
-        except Exception:
-            return ''
+        # 禁止打根路径（会 500）
+        if url.rstrip('/').endswith('321av.net'):
+            url = self.host + '/index.php'
+        text = ''
+        headers = self._headers()
+        # 1) requests 直连（更稳）
+        if req_lib is not None:
+            for t in (timeout, 35):
+                try:
+                    r = req_lib.get(url, headers=headers, timeout=t, verify=False)
+                    if r.status_code == 200 and r.text and len(r.text) > 500:
+                        text = r.text
+                        break
+                except Exception:
+                    continue
+        # 2) BaseSpider.fetch 兜底
+        if not text:
+            try:
+                r = self.fetch(url, headers=headers, timeout=timeout)
+                text = getattr(r, 'text', '') or ''
+            except Exception:
+                text = ''
+        return self._normalize_html(text)
 
     def _parse_list(self, html):
         results, seen = [], set()
+        html = self._normalize_html(html or '')
         if not html:
             return results
-        # 卡片: vodplay/{id}-1-1.html + img data-src + alt
+
+        # 策略1: 完整卡片（带图+标题）
         for m in re.finditer(
-            r'href=["\']/vodplay/(\d+)-\d+-\d+\.html["\'][\s\S]{0,600}?'
-            r'(?:data-src|src)=["\']([^"\']+)["\'][\s\S]{0,200}?alt=["\']([^"\']*)["\']',
+            r'href=["\']/vodplay/(\d+)-\d+-\d+\.html["\'][\s\S]{0,900}?'
+            r'(?:data-src|src)=["\']([^"\']+)["\'][\s\S]{0,300}?alt=["\']([^"\']*)["\']',
             html, re.I
         ):
             vid = m.group(1)
@@ -124,47 +175,79 @@ class Spider(BaseSpider):
                 pic = 'https:' + pic
             elif pic.startswith('/'):
                 pic = self.host + pic
-            title = re.sub(r'\s+', ' ', m.group(3) or '').strip()
+            title = self._fix_txt(re.sub(r'\s+', ' ', m.group(3) or ''))
+            if 'loading' in pic:
+                pic = ''
             results.append({
                 'vod_id': vid,
                 'vod_name': title or vid,
-                'vod_pic': pic if 'loading' not in pic else '',
+                'vod_pic': pic,
                 'vod_remarks': '',
             })
-        if results:
-            return results
-        for m in re.finditer(r'/vodplay/(\d+)-\d+-\d+\.html', html):
-            vid = m.group(1)
-            if vid in seen:
-                continue
-            seen.add(vid)
-            results.append({
-                'vod_id': vid,
-                'vod_name': vid,
-                'vod_pic': '',
-                'vod_remarks': '',
-            })
+
+        # 策略2: 链接 + 附近文字标题
+        if len(results) < 8:
+            for m in re.finditer(
+                r'href=["\']/vodplay/(\d+)-\d+-\d+\.html["\'][^>]*>\s*([^<]{2,80})\s*<',
+                html, re.I
+            ):
+                vid = m.group(1)
+                if vid in seen:
+                    continue
+                title = self._fix_txt(m.group(2))
+                if not title or title.isdigit():
+                    continue
+                seen.add(vid)
+                results.append({
+                    'vod_id': vid,
+                    'vod_name': title,
+                    'vod_pic': '',
+                    'vod_remarks': '',
+                })
+
+        # 策略3: 仅 id（保证不空）
+        if len(results) < 5:
+            for m in re.finditer(r'/vodplay/(\d+)-\d+-\d+\.html', html):
+                vid = m.group(1)
+                if vid in seen:
+                    continue
+                seen.add(vid)
+                # 尝试附近 alt / 文本
+                block = html[max(0, m.start() - 50): m.start() + 500]
+                title = vid
+                am = re.search(r'alt=["\']([^"\']{2,100})["\']', block)
+                if am:
+                    title = self._fix_txt(am.group(1))
+                pic = ''
+                pm = re.search(r'data-src=["\']([^"\']+)["\']', block)
+                if pm:
+                    pic = pm.group(1).replace('\\/', '/')
+                    if pic.startswith('//'):
+                        pic = 'https:' + pic
+                results.append({
+                    'vod_id': vid,
+                    'vod_name': title or vid,
+                    'vod_pic': pic,
+                    'vod_remarks': '',
+                })
         return results
 
-
     def _parse_player_aaaa(self, html):
+        html = self._normalize_html(html or '')
         if not html:
             return None
-        # 1) 标准
-        m = re.search(r'player_aaaa\s*=\s*(\{.*?\})\s*;?\s*<', html, re.S)
         candidates = []
+        m = re.search(r'player_aaaa\s*=\s*(\{.*?\})\s*;?\s*<', html, re.S)
         if m:
             candidates.append(m.group(1))
-        # 2) 反斜杠转义 \" 
         m = re.search(r'player_aaaa\s*=\s*(\{.*?\})', html, re.S)
         if m:
             candidates.append(m.group(1))
-        # 3) 括号深度扫描
         m = re.search(r'player_aaaa\s*=\s*\{', html)
         if m:
             start = m.end() - 1
             depth = 0
-            for i, c in enumerate(html[start:start + 5000]):
+            for i, c in enumerate(html[start:start + 8000]):
                 if c == '{':
                     depth += 1
                 elif c == '}':
@@ -191,7 +274,6 @@ class Spider(BaseSpider):
             data = json.loads(base64.b64decode(s + pad).decode('utf-8', 'ignore'))
         except Exception:
             return ''
-        # {"ss":[[0,"/cn/scop-763"]]}
         code = ''
         ss = data.get('ss') if isinstance(data, dict) else None
         if isinstance(ss, list):
@@ -215,11 +297,18 @@ class Spider(BaseSpider):
             return plays
         url = '%s/private-getvideo/%s' % (self.host, quote(code))
         try:
-            r = self.fetch(url, headers=self._headers(), timeout=20)
-            text = getattr(r, 'text', '') or ''
+            text = self._fetch(url)
             data = json.loads(text)
         except Exception:
-            return plays
+            # 再用 requests
+            if req_lib is not None:
+                try:
+                    r = req_lib.get(url, headers=self._headers(), timeout=20, verify=False)
+                    data = r.json()
+                except Exception:
+                    return plays
+            else:
+                return plays
         playlist = data.get('playlist') if isinstance(data, dict) else None
         if not isinstance(playlist, list):
             return plays
@@ -234,7 +323,6 @@ class Spider(BaseSpider):
                 continue
             seen.add(u)
             name = 'HLS' if '.m3u8' in u else 'MP4'
-            # 尝试从 url 提取清晰度
             qm = re.search(r'(\d{3,4})p', u, re.I)
             if qm:
                 name = qm.group(1) + 'P'
@@ -256,36 +344,36 @@ class Spider(BaseSpider):
         except Exception:
             page = 1
         tid = str(tid or 'home').strip()
+
+        urls = []
         if tid == 'home':
-            url = self.host + '/index.php'
-            if page > 1:
-                url = self.host + '/index.php?page=%d' % page
+            urls.append(self.host + '/index.php' + (('?page=%d' % page) if page > 1 else ''))
+            urls.append(self.host + '/enter')
         else:
-            url = '%s/vodtype/%s.html' % (self.host, tid)
-            if page > 1:
-                url = '%s/vodtype/%s-%d.html' % (self.host, tid, page)
-                # 兼容 ?page=
-                alt = '%s/vodtype/%s.html?page=%d' % (self.host, tid, page)
-                html = self._fetch(url)
-                if not self._parse_list(html):
-                    html = self._fetch(alt)
-                else:
-                    vods = self._parse_list(html)
-                    return {
-                        'list': vods,
-                        'page': page,
-                        'pagecount': page + 1 if len(vods) >= 12 else page,
-                        'limit': 24,
-                        'total': 9999,
-                    }
-        html = self._fetch(url)
-        vods = self._parse_list(html)
+            if page <= 1:
+                urls.append('%s/vodtype/%s.html' % (self.host, tid))
+            else:
+                urls.append('%s/vodtype/%s-%d.html' % (self.host, tid, page))
+                urls.append('%s/vodtype/%s.html?page=%d' % (self.host, tid, page))
+                urls.append('%s/vodtype/%s.html' % (self.host, tid))
+
+        vods = []
+        for url in urls:
+            html = self._fetch(url)
+            vods = self._parse_list(html)
+            if len(vods) >= 5:
+                break
+        # 仍空：回首页列表兜底，避免「找不到数据」
+        if not vods and tid != 'home':
+            html = self._fetch(self.host + '/index.php')
+            vods = self._parse_list(html)
+
         return {
             'list': vods,
             'page': page,
-            'pagecount': page + 1 if len(vods) >= 12 else page,
+            'pagecount': page + 1 if len(vods) >= 10 else page,
             'limit': 24,
-            'total': 9999,
+            'total': 9999 if vods else 0,
         }
 
     def searchContent(self, key, quick=False, pg='1'):
@@ -299,12 +387,16 @@ class Spider(BaseSpider):
             url += '&page=%d' % page
         html = self._fetch(url)
         vods = self._parse_list(html)
+        if not vods:
+            # 备用搜索
+            url2 = '%s/vodsearch/-------------.html?wd=%s' % (self.host, q)
+            vods = self._parse_list(self._fetch(url2))
         return {
             'list': vods,
             'page': page,
-            'pagecount': page + 1 if len(vods) >= 12 else page,
+            'pagecount': page + 1 if len(vods) >= 10 else page,
             'limit': 24,
-            'total': 9999,
+            'total': 9999 if vods else 0,
         }
 
     def detailContent(self, ids):
@@ -327,24 +419,16 @@ class Spider(BaseSpider):
                 name = self._fix_txt(m.group(1))
                 name = re.sub(r'\s*[-|].*$', '', name).strip()
                 name = re.sub(r'^在线播放', '', name).strip()
-        if not name:
-            m = re.search(r'"vod_name"\s*:\s*"((?:[^"\\]|\\.)*)"', html)
-            if m:
-                try:
-                    name = self._fix_txt(json.loads('"' + m.group(1) + '"'))
-                except Exception:
-                    name = self._fix_txt(m.group(1))
         pic = ''
         m = re.search(r'og:image["\']\s+content=["\']([^"\']+)', html, re.I)
         if m:
-            pic = m.group(1)
+            pic = m.group(1).replace('\\/', '/')
 
         code = ''
         data = self._parse_player_aaaa(html)
         if data:
             code = self._decode_player_url(data.get('url') or '')
         if not code:
-            # 从标题/正文兜底番号
             tm = re.search(r'([A-Z]{2,10}-?\d{2,5})', html or '', re.I)
             if tm:
                 code = tm.group(1).lower().replace('_', '-')
@@ -372,7 +456,6 @@ class Spider(BaseSpider):
         }
         if re.search(r'\.(m3u8|mp4)(\?|$)', url, re.I):
             return {'parse': 0, 'jx': 0, 'url': url, 'header': header}
-        # vodplay 页面或纯 id：重新解 private-getvideo
         vid = ''
         m = re.search(r'/vodplay/(\d+)', url)
         if m:
@@ -390,12 +473,10 @@ class Spider(BaseSpider):
                         return {'parse': 0, 'jx': 0, 'url': u, 'header': header}
         return {'parse': 0, 'jx': 0, 'url': '', 'header': header}
 
+
 if __name__ == '__main__':
     sp = Spider()
     sp.init()
-    print(sp.homeContent(False))
-    r = sp.categoryContent('20', 1)
-    print('list', len(r.get('list') or []))
-    if r.get('list'):
-        d = sp.detailContent([r['list'][0]['vod_id']])
-        print(d)
+    for tid in ['20', '21', '22', 'home']:
+        r = sp.categoryContent(tid, 1)
+        print(tid, len(r.get('list') or []), (r.get('list') or [{}])[0].get('vod_name', '')[:30])
