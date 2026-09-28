@@ -45,9 +45,15 @@ SOURCES = [
     {"name": "绅2K·P", "q": "2K", "kind": "parse", "parser": "tvapp.eu.org", "token": "co",
      "api": "http://down-hk1.1ljx.com:10800/c_api/co_cj/?ac=detail&pg=[Page]&wd=[Query]",
      "api2": "http://down-hk1.1ljx.com:10800/c_api/co_cj/?ac=detail&ids=[ID]"},
+{"name": "奇迹", "q": "1080", "kind": "parse", "parser": "kx.zyzqcb.cc", "token": "",
+     "api": "http://154.219.117.232:9981/jacloudapi.php/provide/vod/?ac=detail&pg=[Page]&wd=[Query]",
+     "api2": "http://154.219.117.232:9981/jacloudapi.php/provide/vod/?ac=detail&ids=[ID]"},
     {"name": "绅4K·E", "q": "4K", "kind": "parse", "parser": "175.24.181.180", "token": "CO4K",
      "api": "https://co4k.1ljx.com:32010/c_api/co4k_cj?ac=detail&pg=[Page]&wd=[Query]",
      "api2": "https://co4k.1ljx.com:32010/c_api/co4k_cj?ac=detail&ids=[ID]"},
+    {"name": "嘉禾", "q": "1080", "kind": "parse", "parser": "", "token": "",
+     "api": "http://jhysj.jiaheyy.top/api.php/provide/vod/?ac=detail&pg=[Page]&wd=[Query]",
+     "api2": "http://jhysj.jiaheyy.top/api.php/provide/vod/?ac=detail&ids=[ID]"},
     {"name": "灵虎", "q": "HD", "kind": "parse", "parser": "", "token": "",
      "api": "https://app7.555618.xyz/api.php/getappapi.index/searchList",
      "api2": ""},
@@ -60,6 +66,7 @@ PARSERS = [
     {"name": "组4K·C", "api": "https://vip1.123jx.vip/api/?key=f60311e9bc7c1eac9dcaf5e336647b65&url="},
     {"name": "组C4K·E", "api": "http://175.24.181.180:5000/api/jiexi/common?Key=Dg3tqWmzSgcKGlZY2c&url="},
   {"name": "huaqi", "api": "https://api.huaqi.pro/api/?key=5bd0db7c858ba9f999373450f3651af7&url="},
+  {"name": "zqcb", "api": "https://kx.zyzqcb.cc/api/?key=df8bfba9c7ce22ff751465ec8cb73623&url="},
     {"name": "12321", "api": "https://test1.12321app.com/daoliansiquanjia.php?url="},
 ]
 
