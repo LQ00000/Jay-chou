@@ -172,15 +172,16 @@ class Spider(BaseSpider):
         if not data:
             return videos
 
-        def bigger_thumb(u):
-            """把缩略图尺寸调大，避免壳显示字母占位"""
+        def fix_thumb(u):
+            """保留原图尺寸(改尺寸会403)；对括号编码提升壳兼容性"""
             if not u:
                 return ''
             u = str(u).replace('\\/', '/')
-            # s(w:35,h:20) -> s(w:480,h:270)
-            u = re.sub(r's\(w:\d+,h:\d+\)', 's(w:480,h:270)', u)
-            u = re.sub(r'/w-\d+/', '/w-480/', u)
-            return u
+            # 编码路径中的 s(w:xx,h:yy),webp 段
+            def enc_seg(m):
+                return urllib.parse.quote(m.group(0), safe='')
+            u2 = re.sub(r's\(w:\d+,h:\d+\),(?:webp|jpg|jpeg|png)', enc_seg, u)
+            return u2 if u2 else u
 
         def push(slug, title, pic):
             if not slug or slug in seen or len(str(slug)) < 4:
@@ -194,7 +195,7 @@ class Spider(BaseSpider):
             videos.append({
                 'vod_id': str(slug),
                 'vod_name': (title or str(slug).replace('-', ' '))[:120],
-                'vod_pic': self._abs(bigger_thumb(pic)),
+                'vod_pic': self._abs(fix_thumb(pic)),
                 'vod_remarks': '',
             })
 
@@ -242,8 +243,8 @@ class Spider(BaseSpider):
             if not slug:
                 continue
             pic = (
-                obj.get('imageURL')
-                or obj.get('thumbURL')
+                obj.get('thumbURL')
+                or obj.get('imageURL')
                 or obj.get('previewThumbURL')
                 or obj.get('image')
                 or ''
@@ -278,7 +279,9 @@ class Spider(BaseSpider):
                 if re.match(r'^(categories|channels|users|photos|creators|pornstars|tags|search|shorts)\b', slug, re.I):
                     continue
                 seen.add(slug)
-                pic = re.sub(r's\(w:\d+,h:\d+\)', 's(w:480,h:270)', pic)
+                # keep original signed size
+                pass
+                # pic unchanged
                 videos.append({
                     'vod_id': slug,
                     'vod_name': (title or slug.replace('-', ' '))[:120],
