@@ -173,15 +173,10 @@ class Spider(BaseSpider):
             return videos
 
         def fix_thumb(u):
-            """保留原图尺寸(改尺寸会403)；对括号编码提升壳兼容性"""
+            """保留原始签名 URL，不改尺寸不编码（编码后部分壳仍无法加载）"""
             if not u:
                 return ''
-            u = str(u).replace('\\/', '/')
-            # 编码路径中的 s(w:xx,h:yy),webp 段
-            def enc_seg(m):
-                return urllib.parse.quote(m.group(0), safe='')
-            u2 = re.sub(r's\(w:\d+,h:\d+\),(?:webp|jpg|jpeg|png)', enc_seg, u)
-            return u2 if u2 else u
+            return str(u).replace('\\/', '/').strip()
 
         def push(slug, title, pic):
             if not slug or slug in seen or len(str(slug)) < 4:
@@ -202,31 +197,42 @@ class Spider(BaseSpider):
         candidates = []
 
         def collect(obj, depth=0):
-            if depth > 8:
+            if depth > 12:
                 return
             if isinstance(obj, list):
-                for x in obj:
+                # 列表本身可能是 video 对象数组
+                if obj and isinstance(obj[0], dict) and (
+                    obj[0].get('pageURL') or obj[0].get('thumbURL') or obj[0].get('title')
+                ):
+                    candidates.extend(obj)
+                for x in obj[:80]:
                     collect(x, depth + 1)
                 return
             if not isinstance(obj, dict):
                 return
-            # 直接命中 videoThumbProps 列表
+            # 任何层级的 videoThumbProps
             vtp = obj.get('videoThumbProps')
             if isinstance(vtp, list) and vtp:
                 candidates.extend(vtp)
-            for key in ('videos', 'videoList', 'relatedVideoProps', 'trendingVideoProps',
-                        'recommendedVideoProps', 'videoListProps'):
-                val = obj.get(key)
-                if isinstance(val, list):
-                    candidates.extend(val)
-                elif isinstance(val, dict):
-                    if isinstance(val.get('videoThumbProps'), list):
-                        candidates.extend(val['videoThumbProps'])
-                    collect(val, depth + 1)
-            # 继续向下
-            for k in ('layoutPage', 'store', 'entity', 'searchResult', 'pages'):
-                if k in obj:
-                    collect(obj[k], depth + 1)
+            # 分类页: trendingVideoListProps / videoListProps / searchResult 等
+            for key in (
+                'videos', 'videoList', 'videoThumbProps',
+                'relatedVideoProps', 'trendingVideoProps', 'trendingVideoListProps',
+                'recommendedVideoProps', 'videoListProps', 'searchResult',
+                'layoutPage', 'store', 'entity', 'pages',
+            ):
+                if key in obj:
+                    collect(obj[key], depth + 1)
+            # 兜底：遍历其余 dict 值（限深度）
+            if depth < 6:
+                for k, v in obj.items():
+                    if k in ('videos', 'videoList', 'videoThumbProps', 'relatedVideoProps',
+                             'trendingVideoProps', 'trendingVideoListProps',
+                             'recommendedVideoProps', 'videoListProps', 'searchResult',
+                             'layoutPage', 'store', 'entity', 'pages'):
+                        continue
+                    if isinstance(v, (dict, list)):
+                        collect(v, depth + 1)
 
         collect(data)
 
@@ -243,8 +249,8 @@ class Spider(BaseSpider):
             if not slug:
                 continue
             pic = (
-                obj.get('thumbURL')
-                or obj.get('imageURL')
+                obj.get('imageURL')
+                or obj.get('thumbURL')
                 or obj.get('previewThumbURL')
                 or obj.get('image')
                 or ''
@@ -290,16 +296,36 @@ class Spider(BaseSpider):
                 })
             if len(videos) >= 24:
                 break
-        if len(videos) < 8:
-            for m in re.finditer(r'/videos/([a-z0-9][a-z0-9\-_]{5,})', html, re.I):
-                slug = m.group(1)
+        if len(videos) < 12:
+            for m in re.finditer(
+                r'(?:src|data-src)=["\'](https://[^"\']*xhcdn[^"\']+)["\'][\s\S]{0,500}?/videos/([a-z0-9][a-z0-9\-_]{5,})',
+                html, re.I
+            ):
+                pic, slug = m.group(1), m.group(2)
                 if slug in seen:
+                    continue
+                if re.match(r'^(categories|channels|users|photos|creators|pornstars|tags|search|shorts)\b', slug, re.I):
                     continue
                 seen.add(slug)
                 videos.append({
                     'vod_id': slug,
                     'vod_name': slug.replace('-', ' '),
-                    'vod_pic': '',
+                    'vod_pic': self._abs(pic),
+                    'vod_remarks': '',
+                })
+            for m in re.finditer(r'/videos/([a-z0-9][a-z0-9\-_]{5,})', html, re.I):
+                slug = m.group(1)
+                if slug in seen:
+                    continue
+                if re.match(r'^(categories|channels|users|photos|creators|pornstars|tags|search|shorts)\b', slug, re.I):
+                    continue
+                seen.add(slug)
+                block = html[max(0, m.start()-300):m.start()+100]
+                pm = re.search(r'(https://[^"\']*xhcdn[^"\']+\.(?:webp|jpg|jpeg|png)[^"\']*)', block, re.I)
+                videos.append({
+                    'vod_id': slug,
+                    'vod_name': slug.replace('-', ' '),
+                    'vod_pic': self._abs(pm.group(1)) if pm else '',
                     'vod_remarks': '',
                 })
         return videos
