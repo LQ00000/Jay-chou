@@ -51,7 +51,7 @@ SOURCES = [
     {"name": "绅4K·E", "q": "4K", "kind": "parse", "parser": "175.24.181.180", "token": "CO4K",
      "api": "https://co4k.1ljx.com:32010/c_api/co4k_cj?ac=detail&pg=[Page]&wd=[Query]",
      "api2": "https://co4k.1ljx.com:32010/c_api/co4k_cj?ac=detail&ids=[ID]"},
-    {"name": "嘉禾", "q": "1080", "kind": "parse", "parser": "", "token": "",
+    {"name": "嘉禾", "q": "1080", "kind": "parse", "parser": "zyzqcb.cc", "token": "",
      "api": "http://jhysj.jiaheyy.top/api.php/provide/vod/?ac=detail&pg=[Page]&wd=[Query]",
      "api2": "http://jhysj.jiaheyy.top/api.php/provide/vod/?ac=detail&ids=[ID]"},
     {"name": "灵虎", "q": "HD", "kind": "parse", "parser": "", "token": "",
@@ -67,6 +67,7 @@ PARSERS = [
     {"name": "组C4K·E", "api": "http://175.24.181.180:5000/api/jiexi/common?Key=Dg3tqWmzSgcKGlZY2c&url="},
   {"name": "huaqi", "api": "https://api.huaqi.pro/api/?key=5bd0db7c858ba9f999373450f3651af7&url="},
   {"name": "zqcb", "api": "https://kx.zyzqcb.cc/api/?key=df8bfba9c7ce22ff751465ec8cb73623&url="},
+ {"name": "789", "api": "https://jx.789jiexi.icu:4433/?url="},
     {"name": "12321", "api": "https://test1.12321app.com/daoliansiquanjia.php?url="},
 ]
 
