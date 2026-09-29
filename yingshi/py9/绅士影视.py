@@ -51,9 +51,9 @@ SOURCES = [
     {"name": "绅4K·E", "q": "4K", "kind": "parse", "parser": "175.24.181.180", "token": "CO4K",
      "api": "https://co4k.1ljx.com:32010/c_api/co4k_cj?ac=detail&pg=[Page]&wd=[Query]",
      "api2": "https://co4k.1ljx.com:32010/c_api/co4k_cj?ac=detail&ids=[ID]"},
-    {"name": "嘉禾", "q": "1080", "kind": "parse", "parser": "zyzqcb.cc", "token": "",
-     "api": "http://jhysj.jiaheyy.top/api.php/provide/vod/?ac=detail&pg=[Page]&wd=[Query]",
-     "api2": "http://jhysj.jiaheyy.top/api.php/provide/vod/?ac=detail&ids=[ID]"},
+    {"name": "飘零", "q": "HD", "kind": "parse", "parser": "", "token": "",
+     "api": "https://p2100.net/api.php/provide/vod/?ac=detail&pg=[Page]&wd=[Query]",
+     "api2": "https://p2100.net/api.php/provide/vod/?ac=detail&ids=[ID]"},
     {"name": "灵虎", "q": "HD", "kind": "parse", "parser": "", "token": "",
      "api": "https://app7.555618.xyz/api.php/getappapi.index/searchList",
      "api2": ""},
@@ -83,7 +83,7 @@ STANDARD_TABS = [
 ]
 
 SUB_CLASSES = {
-    "movie": ["全部", "动作片", "喜剧片", "爱情片", "科幻片", "恐怖片", "剧情片", "战争片", "惊悚片", "犯罪片", "悬疑片", "动画片"],
+    "movie": ["全部", "动作片", "喜剧片", "爱情片", "科幻片", "恐怖片", "剧情片", "战争片", "惊悚片", "犯罪片", "悬疑片", "伦理片","动画片"],
     "tv": ["全部", "国产剧", "香港剧", "台湾剧", "韩国剧", "日本剧", "欧美剧", "泰国剧", "海外剧"],
     "va": ["全部", "大陆综艺", "港台综艺", "日韩综艺", "欧美综艺", "真人秀", "脱口秀"],
     "ct": ["全部", "国产动漫", "日本动漫", "欧美动漫", "海外动漫", "热血", "科幻", "恋爱"],
