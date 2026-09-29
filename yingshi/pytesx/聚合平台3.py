@@ -94,7 +94,7 @@ class Spider(BaseSpider):
         's41': {'name': '🐾刺桐', 'api': 'http://pg.cttv.vip/api.php/provide/vod/'},
         's42': {'name': '🐾巨量', 'api': 'https://api.juliang.live/api/provide/vod/'},
         's43': {'name': '🐾荐片', 'api': 'http://192.129.140.23:5757/api/荐片[优]?pwd=dzyyds', 'type': 2},
-        's44': {'name': '🐾tvbx', 'api': 'https://dy.7772888.xyz/api.php/tvbox', 'type': 1},
+        's44': {'name': '🐾tvbx', 'api': 'ttp://bob2.hkt.net.cn/miraplay/dbo.php', 'type': 4},
         's45': {'name': '📺魔都', 'api': 'https://www.mdzyapi.com/api.php/provide/vod'},
     }
 
@@ -376,11 +376,22 @@ class Spider(BaseSpider):
         # 只返回源列表，不逐个请求分类（否则 40+ 源会卡死加载）
         classes = []
         filters = {}
-        self._first_cate = {}
+        self._first_cate = {'s43': 'tv'}
         default_vals = [{'n': '全部(最新)', 'v': ''}]
         for sk, so in self.SOURCES.items():
             classes.append({'type_id': sk, 'type_name': so['name']})
-            filters[sk] = [{'key': 'cateId', 'name': '分类', 'value': list(default_vals)}]
+            if (so.get('type') or 1) == 4:
+                vals = [
+                    {'n': '全部(连续剧)', 'v': 'tv'},
+                    {'n': '连续剧', 'v': 'tv'},
+                    {'n': '电影', 'v': 'movie'},
+                    {'n': '综艺', 'v': 'variety'},
+                    {'n': '动漫', 'v': 'anime'},
+                ]
+                filters[sk] = [{'key': 'cateId', 'name': '分类', 'value': vals}]
+                self._first_cate[sk] = 'tv'
+            else:
+                filters[sk] = [{'key': 'cateId', 'name': '分类', 'value': list(default_vals)}]
         return {'class': classes, 'filters': filters if filter else {}}
 
     def homeVideoContent(self):
@@ -404,10 +415,12 @@ class Spider(BaseSpider):
             if cate_id:
                 params['t'] = cate_id
             url = self._build_url(source['api'], params)
-        elif stype == 2:
+        elif stype in (2, 4):
             params = {'pg': pg}
-            if cate_id:
-                params['t'] = cate_id
+            if not cate_id:
+                # dbo 无 t 时列表为空，默认连续剧
+                cate_id = self._first_cate.get(tid) or 'tv'
+            params['t'] = cate_id
             url = self._build_url(source['api'], params)
         else:
             params = {'ac': 'detail', 'pg': pg}
@@ -445,6 +458,10 @@ class Spider(BaseSpider):
         stype = source.get('type') or 1
         if stype == 0:
             html = self._request(self._build_url(source['api'], {'ac': 'videolist', 'ids': real_id}))
+        elif stype == 4:
+            html = self._request(self._build_url(source['api'], {'ac': 'detail', 'ids': real_id}))
+            if not html:
+                html = self._request(self._build_url(source['api'], {'ids': real_id}))
         elif stype == 3:
             html = self._request(self._build_url(source['api'], {'ac': 'videolist', 'ids': real_id}))
             tmp = self._parse_response(html)
@@ -505,6 +522,9 @@ class Spider(BaseSpider):
                     url = self._build_url(so['api'], {'ac': 'videolist', 'wd': key, 'pg': pg})
                 elif stype == 2:
                     url = self._build_url(so['api'], {'wd': key, 'pg': pg})
+                elif stype == 4:
+                    # dbo 搜索弱，按分类拉列表再本地过滤
+                    url = self._build_url(so['api'], {'t': 'tv', 'pg': pg})
                 else:
                     url = self._build_url(so['api'], {'ac': 'detail', 'wd': key, 'pg': pg})
                 data = self._parse_response(self._request(url))
@@ -556,6 +576,39 @@ class Spider(BaseSpider):
             first = play_url.split(';')[0]
             if re.match(r'^https?://', first, re.I):
                 play_url = first
+        # 荐片 dbo：相对 /play/xxx → 调接口取 m3u8
+        if play_url.startswith('/play/') or re.match(r'^\d+-ep\d+', play_url):
+            path = play_url if play_url.startswith('/') else '/play/' + play_url
+            # flag 可能是 "🐾荐片-独播库内网"
+            fl = self._text(flag)
+            if '-' in fl:
+                fl = fl.split('-', 1)[-1]
+            if not fl or fl.startswith('🐾') or fl.startswith('s'):
+                fl = '独播库内网'
+            api = 'http://bob2.hkt.net.cn/miraplay/dbo.php'
+            resp = self._request(self._build_url(api, {'flag': fl, 'play': path}))
+            try:
+                j = self._safe_json(resp) or {}
+            except Exception:
+                j = {}
+            real = self._text(j.get('url') or '')
+            hdr = {'User-Agent': self.UA}
+            hraw = j.get('header')
+            if isinstance(hraw, str):
+                try:
+                    hraw = json.loads(hraw)
+                except Exception:
+                    hraw = None
+            if isinstance(hraw, dict):
+                for k, v in hraw.items():
+                    if v:
+                        hdr[k] = v
+            if real:
+                return {'parse': 0, 'jx': 0, 'url': real, 'header': hdr}
+            return {
+                'parse': 1, 'jx': 1, 'url': path,
+                'header': hdr,
+            }
         need_parse = not self.isVideoFormat(play_url)
         return {
             'parse': 1 if need_parse else 0,
@@ -563,7 +616,7 @@ class Spider(BaseSpider):
             'url': play_url,
             'header': {
                 'User-Agent': self.UA,
-                'Referer': 'https://api.juliang.live/',
+                'Referer': 'https://www.dbkk.cc/',
             },
         }
 
