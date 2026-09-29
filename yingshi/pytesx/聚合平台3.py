@@ -49,6 +49,18 @@ class Spider(BaseSpider):
     )
     headers = {'User-Agent': UA}
 
+    # 绅士影视解析站（优先顺序）
+    PARSERS = [
+        {'name': '组豪富英', 'api': 'https://coffee-5c93e1f751eb.edge.tvapp.eu.org:31000/api/?key=6f8622b2-8402-43c9-ae29-0adaa292bc71&url='},
+        {'name': '组4K·P', 'api': 'https://jx.meilinvps.com/api/?key=7dba17e4cc9b887faf7afaf9a20fd391&url='},
+        {'name': '组4K·C', 'api': 'https://vip1.123jx.vip/api/?key=f60311e9bc7c1eac9dcaf5e336647b65&url='},
+        {'name': '组C4K·E', 'api': 'http://175.24.181.180:5000/api/jiexi/common?Key=Dg3tqWmzSgcKGlZY2c&url='},
+        {'name': 'huaqi', 'api': 'https://api.huaqi.pro/api/?key=5bd0db7c858ba9f999373450f3651af7&url='},
+        {'name': 'zqcb', 'api': 'https://kx.zyzqcb.cc/api/?key=df8bfba9c7ce22ff751465ec8cb73623&url='},
+        {'name': '789', 'api': 'https://jx.789jiexi.icu:4433/?url='},
+        {'name': '12321', 'api': 'https://test1.12321app.com/daoliansiquanjia.php?url='},
+    ]
+
     # type: 0=XML旧版  1=JSON标准(默认)  2=代理源  3=大地feifei2
     SOURCES = {
         's1': {'name': '🎬电影天堂', 'api': 'http://caiji.dyttzyapi.com/api.php/provide/vod/from/dyttm3u8/at/json'},
@@ -96,6 +108,13 @@ class Spider(BaseSpider):
         's43': {'name': '🐾荐片', 'api': 'https://zhangqun1818.serv00.net/jianpian.php', 'type': 2},
         's44': {'name': '🐾独播库', 'api': 'http://101.42.104.195:7123/api/tvbox/source/2050160339265261568?token=OLFNw46CpJpG9fP2Y2zBW0tvbcLJ9Si2', 'type': 5},
         's45': {'name': '📺魔都', 'api': 'https://www.mdzyapi.com/api.php/provide/vod'},
+        's46': {'name': '🐾极影4K', 'api': 'http://101.201.171.207:802/api.php/provide/vod/', 'type': 1, 'parse': 1, 'parser': '175.24.181.180'},
+        's47': {'name': '🐾tw采集', 'api': 'http://cj.10010888.xyz/api.php/provide/vod/', 'type': 1, 'parse': 1},
+        's48': {'name': '🐾绅士官采', 'api': 'https://cj.jusj.top/api.php/provide/vod/', 'type': 1, 'parse': 1},
+        's49': {'name': '🐾绅4K·P', 'api': 'https://cms.meilinvps.com/api.php/provide/vod/', 'type': 1, 'parse': 1, 'parser': 'jx.meilinvps.com'},
+        's50': {'name': '🐾绅4K·C', 'api': 'https://cms.123jx.vip/api.php/provide/vod/', 'type': 1, 'parse': 1, 'parser': '123jx.vip'},
+        's51': {'name': '🐾绅2K·P', 'api': 'http://down-hk1.1ljx.com:10800/c_api/co_cj/', 'type': 1, 'parse': 1, 'parser': 'tvapp.eu.org'},
+        's53': {'name': '🐾绅4K·E', 'api': 'https://co4k.1ljx.com:32010/c_api/co4k_cj', 'type': 1, 'parse': 1, 'parser': '175.24.181.180'},
     }
 
     def _text(self, v):
@@ -565,26 +584,45 @@ class Spider(BaseSpider):
             return {'list': [], 'page': pg, 'pagecount': 1, 'limit': 40, 'total': 0}
         result = []
         max_page = 1
-        items = list(self.SOURCES.items())
+        # 优先源：荐片/独播库/极影/tw/绅4K 系列（避免被前 60 条提前截断）
+        priority_keys = ['s43', 's44', 's46', 's47', 's48', 's49', 's50', 's51', 's52', 's53']
+        all_items = list(self.SOURCES.items())
+        pri = [(k, v) for k, v in all_items if k in priority_keys]
+        rest = [(k, v) for k, v in all_items if k not in priority_keys]
+        if quick:
+            items = pri + rest[:12]
+        else:
+            items = pri + rest
 
         def _one(sk_so):
             sk, so = sk_so
             try:
                 stype = so.get('type') or 1
+                # 独播库较慢，单独加长超时
+                extra_to = 15 if sk == 's44' else None
                 if stype in (0, 3):
                     url = self._build_url(so['api'], {'ac': 'videolist', 'wd': key, 'pg': pg})
                 elif stype == 2:
+                    # 荐片：直接 wd
                     url = self._build_url(so['api'], {'wd': key, 'pg': pg})
                 elif stype == 5:
                     url = self._build_url(so['api'], {'wd': key, 'pg': pg})
                 elif stype == 4:
-                    url = self._build_url(so['api'], {'t': 'tv', 'pg': pg})
+                    url = self._build_url(so['api'], {'t': 'tv', 'pg': pg, 'wd': key})
                 else:
                     url = self._build_url(so['api'], {'ac': 'detail', 'wd': key, 'pg': pg})
-                data = self._parse_response(self._request(url))
-                if stype not in (0, 2, 3) and not data.get('list'):
+                html = self._request(url) if extra_to is None else self._request_timeout(url, extra_to)
+                data = self._parse_response(html)
+                # 空结果时兜底 videolist
+                if not data.get('list') and stype not in (0, 2, 3, 5):
                     data2 = self._parse_response(
                         self._request(self._build_url(so['api'], {'ac': 'videolist', 'wd': key, 'pg': pg}))
+                    )
+                    if data2.get('list'):
+                        data = data2
+                if not data.get('list') and stype == 2:
+                    data2 = self._parse_response(
+                        self._request(self._build_url(so['api'], {'ac': 'detail', 'wd': key, 'pg': pg}))
                     )
                     if data2.get('list'):
                         data = data2
@@ -600,18 +638,19 @@ class Spider(BaseSpider):
 
         try:
             from concurrent.futures import ThreadPoolExecutor, as_completed
-            with ThreadPoolExecutor(max_workers=8) as pool:
+            # 先跑优先源，再跑其余
+            with ThreadPoolExecutor(max_workers=6) as pool:
                 futs = [pool.submit(_one, it) for it in items]
-                for fut in as_completed(futs, timeout=25):
+                for fut in as_completed(futs, timeout=35):
                     try:
-                        lst, pc = fut.result()
+                        lst, pc = fut.result(timeout=1)
                         result.extend(lst)
                         if pc > max_page:
                             max_page = pc
                     except Exception:
                         pass
         except Exception:
-            for it in items[:15]:
+            for it in items[:20]:
                 lst, pc = _one(it)
                 result.extend(lst)
                 if pc > max_page:
@@ -623,6 +662,91 @@ class Spider(BaseSpider):
             'limit': 40,
             'total': 9999,
         }
+
+    def _request_timeout(self, url, timeout=15, extra_headers=None):
+        try:
+            hdr = dict(self.headers)
+            if extra_headers:
+                hdr.update(extra_headers)
+            if requests is None:
+                import urllib.request, ssl
+                ctx = ssl.create_default_context()
+                ctx.check_hostname = False
+                ctx.verify_mode = ssl.CERT_NONE
+                req = urllib.request.Request(url, headers=hdr)
+                with urllib.request.urlopen(req, timeout=timeout, context=ctx) as r:
+                    return r.read().decode('utf-8', 'ignore')
+            r = requests.get(url, headers=hdr, timeout=timeout, verify=False)
+            r.encoding = 'utf-8'
+            return r.text if r.status_code == 200 else ''
+        except Exception as e:
+            print('request error', url, e)
+            return ''
+
+
+    def _parse_url(self, token_url, prefer=''):
+        """绅士影视解析逻辑：多解析站轮询取直链"""
+        from urllib.parse import quote
+        if not token_url:
+            return ''
+        # 已是直链
+        if re.search(r'\.(m3u8|mp4|flv|mkv)(\?|$)', token_url, re.I):
+            return token_url
+        cands = []
+        if prefer:
+            for p in self.PARSERS:
+                if prefer in p['api'] or prefer in p.get('name', ''):
+                    cands.append(p)
+        # co_ 令牌：组豪富英 / 12321 优先
+        if token_url.startswith('co_') or token_url.startswith('CO4K') or 'tvapp' in (prefer or ''):
+            for p in self.PARSERS:
+                if p['name'] in ('组豪富英', '12321') and p not in cands:
+                    cands.insert(0, p)
+        # 页面链接优先 huaqi / 12321
+        if re.search(r'https?://', token_url) and not re.search(r'\.(m3u8|mp4)(\?|$)', token_url, re.I):
+            for p in self.PARSERS:
+                if p['name'] in ('huaqi', '12321') and p not in cands:
+                    cands.insert(0, p)
+        cands += [p for p in self.PARSERS if p not in cands]
+        urls_try = [token_url]
+        try:
+            enc = quote(token_url, safe='')
+            if enc != token_url:
+                urls_try.append(enc)
+        except Exception:
+            pass
+        for p in cands:
+            for tu in urls_try:
+                try:
+                    txt = self._request(p['api'] + tu)
+                    if not txt:
+                        continue
+                    data = self._safe_json(txt)
+                    if isinstance(data, dict):
+                        code = data.get('code')
+                        ok = True
+                        if code is not None:
+                            try:
+                                ok = int(code) in (200, 0, 1, 2000)
+                            except Exception:
+                                ok = True
+                        if ok:
+                            for k in ('url', 'Url', 'URL', 'play_url', 'play', 'm3u8', 'data'):
+                                v = data.get(k)
+                                if isinstance(v, dict):
+                                    v = v.get('url') or v.get('play')
+                                if isinstance(v, str) and v.startswith('http'):
+                                    return v.replace('\\/', '/')
+                    for m in re.finditer(r'"(?:url|Url|URL|play_url|data|play)"\s*:\s*"([^"]+)"', txt):
+                        v = m.group(1).replace('\\/', '/')
+                        if re.search(r'\.(m3u8|mp4)', v, re.I) or v.startswith('http'):
+                            return v
+                    m = re.search(r'https?://[^"\'\s<>]+?\.(?:m3u8|mp4)[^"\'\s<>]*', txt.replace('\\/', '/'))
+                    if m:
+                        return m.group(0)
+                except Exception:
+                    continue
+        return ''
 
     def playerContent(self, flag, id, vipFlags):
         play_url = self._text(id)
@@ -717,14 +841,46 @@ class Spider(BaseSpider):
                     return {'parse': 0, 'jx': 0, 'url': real2, 'header': hdr}
             return {'parse': 0, 'jx': 0, 'url': '', 'header': hdr}
         need_parse = not self.isVideoFormat(play_url)
+        if not need_parse:
+            return {
+                'parse': 0, 'jx': 0, 'url': play_url,
+                'header': {'User-Agent': self.UA},
+            }
+        # 需要解析：按 flag/源 优先匹配解析站
+        prefer = ''
+        fl = self._text(flag)
+        # 从 SOURCES 找 parser 标记
+        for sk, so in self.SOURCES.items():
+            if so.get('parse') and (sk in fl or so['name'].replace('🐾', '') in fl or so['name'] in fl):
+                prefer = so.get('parser') or ''
+                break
+        # token 前缀 / 线路名提示（绅2K·P = co_ → tvapp）
+        if not prefer:
+            for tk, api in (('CO4K', '175.24.181.180'), ('co_egg', 'tvapp.eu.org'),
+                            ('co_', 'tvapp.eu.org'), ('zijian', '123jx.vip'), ('JYY', '175.24.181.180')):
+                if play_url.startswith(tk):
+                    prefer = api
+                    break
+        if not prefer and ('绅2K' in fl or '2K·P' in fl or fl.endswith('-co') or fl == 'co'):
+            prefer = 'tvapp.eu.org'
+        if not prefer and ('绅4K·E' in fl or '极影' in fl):
+            prefer = '175.24.181.180'
+        if not prefer and ('绅4K·C' in fl or '4K·C' in fl):
+            prefer = '123jx.vip'
+        if not prefer and ('绅4K·P' in fl or '4K·P' in fl):
+            prefer = 'jx.meilinvps.com'
+        # co_ 令牌必须优先用组豪富英
+        if play_url.startswith('co_') or play_url.startswith('CO4K'):
+            prefer = prefer or 'tvapp.eu.org'
+        real = self._parse_url(play_url, prefer)
+        if real:
+            return {
+                'parse': 0, 'jx': 0, 'url': real,
+                'header': {'User-Agent': self.UA},
+            }
         return {
-            'parse': 1 if need_parse else 0,
-            'jx': 0,
-            'url': play_url,
-            'header': {
-                'User-Agent': self.UA,
-                'Referer': 'https://www.dbkk.cc/',
-            },
+            'parse': 1, 'jx': 1, 'url': play_url,
+            'header': {'User-Agent': self.UA},
         }
 
     def localProxy(self, param):
