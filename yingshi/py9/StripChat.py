@@ -290,22 +290,28 @@ class Spider(Spider):
 
         # 2) 有清晰度：返回多清晰度（直链，不强制代理）
         if qualities:
+            # 多清晰度：优先最高清单链（兼容更多播放器）
+            best_q = qualities[0][1]
             urls = []
             for name, u in qualities:
                 urls.extend([name, u])
             return {
                 "parse": 0,
                 "jx": 0,
-                "url": urls,
+                "url": best_q,  # 主链
                 "header": headers,
                 "format": "application/x-mpegURL",
+                "extra": {"qualities": [{"name": n, "url": u} for n, u in qualities]},
             }
 
         # 3) 无清晰度：直接返回 master（避免空数组导致「暂无播放数据」）
+        if not best_master:
+            best_master = masters[0]
         return {
             "parse": 0,
             "jx": 0,
             "url": best_master,
+            "playUrl": "",
             "header": headers,
             "format": "application/x-mpegURL",
         }
