@@ -206,8 +206,8 @@ class Spider(Spider):
                     "vod_pic": f"https://img.{self.Doppiocdn}/snapshot/{uid}/",
                     "vod_content": "Stripchat 直播流",
                     "vod_remarks": "🔴 直播中",
-                    "vod_play_from": "doppio$$$sacf$$$直连",
-                    "vod_play_url": f"自动${uid}$$$自动$sacf_{uid}$$$自动$direct_{uid}",
+                    "vod_play_from": "线路一$$$线路二$$$线路三",
+                    "vod_play_url": f"主线路${uid}$$$备用线路$lemon_{uid}$$$备用线路三$sacf_{uid}",
                 }
             ]
         }
@@ -226,20 +226,22 @@ class Spider(Spider):
             ]
         }
 
+
     def _master_urls(self, sid):
+        # 与 JS 一致：sacf 优先
         return [
+            f"https://edge-hls.sacfedge.com/hls/{sid}/master/{sid}_auto.m3u8?playlistType=lowLatency",
             f"https://edge-hls.doppiocdn.org/hls/{sid}/master/{sid}_auto.m3u8?playlistType=lowLatency",
             f"https://edge-hls.doppiocdn.com/hls/{sid}/master/{sid}_auto.m3u8?playlistType=lowLatency",
-            f"https://edge-hls.sacfedge.com/hls/{sid}/master/{sid}_auto.m3u8?playlistType=lowLatency",
             f"https://edge-hls.doppiocdn.org/hls/{sid}/master/{sid}.m3u8",
         ]
 
-    def _parse_master(self, text, headers):
-        """解析 master，返回 [(name, url), ...]"""
+    def _parse_master(self, text):
+        """解析 master → [(name, url), ...] 与 JS resolveQualities 一致"""
         out = []
         if not text or "#EXTM3U" not in text:
             return out
-        lines = text.strip().split("\n")
+        lines = text.replace("\r", "").split("\n")
         for i, line in enumerate(lines):
             if "#EXT-X-STREAM-INF" not in line:
                 continue
@@ -252,69 +254,91 @@ class Spider(Spider):
                 if m:
                     qn = m.group(1)
             nxt = (lines[i + 1] if i + 1 < len(lines) else "").strip()
-            if nxt and nxt.startswith("http"):
+            if nxt.startswith("http"):
                 out.append((qn, nxt))
         return out
 
+    def _fetch_text(self, url, headers, timeout=10):
+        """独立请求，不复用可能被污染的 session（对齐 JS req）"""
+        try:
+            r = requests.get(
+                url,
+                headers=headers,
+                timeout=timeout,
+                allow_redirects=True,
+                verify=False,
+            )
+            if r is not None and r.status_code == 200:
+                return r.text or ""
+        except Exception:
+            pass
+        try:
+            r = self.session_get(url, headers=headers, timeout=timeout)
+            if r is not None and r.status_code == 200:
+                return r.text or ""
+        except Exception:
+            pass
+        return ""
+
     def playerContent(self, flag, id, vipFlags):
+        # 完全按 JS play() 逻辑
         sid = str(id or "").strip()
         if "_" in sid:
             sid = sid.split("_")[-1]
         headers = {
-            "User-Agent": self.headers.get("User-Agent"),
+            "User-Agent": self.headers.get("User-Agent")
+            or "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:153.0) Gecko/20100101 Firefox/153.0",
             "Origin": self.host,
             "Referer": f"{self.host}/",
             "Accept": "*/*",
         }
-        # 按线路选择 CDN 顺序
         masters = self._master_urls(sid)
         fl = str(flag or "").lower()
-        if "sacf" in fl or str(id).startswith("sacf"):
+        # 线路二 lemon / 线路三 sacf：强制 sacf
+        if "sacf" in fl or str(id).startswith("sacf") or "lemon" in str(id):
             masters = [
                 f"https://edge-hls.sacfedge.com/hls/{sid}/master/{sid}_auto.m3u8?playlistType=lowLatency",
-            ] + masters
+            ] + [m for m in masters if "sacfedge" not in m]
 
-        # 1) 尝试解析清晰度列表
-        qualities = []
         best_master = masters[0]
         for mu in masters:
-            try:
-                r = self.session_get(mu, headers=headers, timeout=10)
-                if r and r.status_code == 200 and "#EXTM3U" in r.text:
-                    best_master = mu
-                    qualities = self._parse_master(r.text, headers)
-                    if qualities:
-                        break
-            except Exception:
+            text = self._fetch_text(mu, headers, timeout=10)
+            if not text or "#EXTM3U" not in text:
                 continue
+            best_master = mu
+            quals = self._parse_master(text)
+            if quals:
+                # 与 JS 相同：返回最高清媒体列表地址（不是 master）
+                best_url = quals[0][1]
+                # 媒体链用 CDN 自己的 Referer 更稳
+                cdn = ""
+                m = re.match(r"https?://([^/]+)", best_url)
+                if m:
+                    cdn = m.group(1)
+                play_headers = {
+                    "User-Agent": headers["User-Agent"],
+                    "Origin": self.host,
+                    "Referer": f"{self.host}/",
+                    "Accept": "*/*",
+                }
+                if cdn:
+                    play_headers["Origin"] = "https://" + cdn
+                    play_headers["Referer"] = "https://" + cdn + "/"
+                return {
+                    "parse": 0,
+                    "jx": 0,
+                    "url": best_url,
+                    "header": play_headers,
+                }
 
-        # 2) 有清晰度：返回多清晰度（直链，不强制代理）
-        if qualities:
-            # 多清晰度：优先最高清单链（兼容更多播放器）
-            best_q = qualities[0][1]
-            urls = []
-            for name, u in qualities:
-                urls.extend([name, u])
-            return {
-                "parse": 0,
-                "jx": 0,
-                "url": best_q,  # 主链
-                "header": headers,
-                "format": "application/x-mpegURL",
-                "extra": {"qualities": [{"name": n, "url": u} for n, u in qualities]},
-            }
-
-        # 3) 无清晰度：直接返回 master（避免空数组导致「暂无播放数据」）
-        if not best_master:
-            best_master = masters[0]
+        # 无清晰度时退回 master（JS 同样逻辑）
         return {
             "parse": 0,
             "jx": 0,
             "url": best_master,
-            "playUrl": "",
             "header": headers,
-            "format": "application/x-mpegURL",
         }
+
 
     # ---------- 代理（可选，解密 MOUFLON）----------
     def localProxy(self, param):
