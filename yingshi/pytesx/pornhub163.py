@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 Pornhub163  https://cn.pornhub163.net
-需 cookie x-index-auth=authed，列表 /video，播放 /embed/{viewkey} 取 m3u8
+修复：封面取 jpg、播放实时解析 m3u8/mp4
 """
 import json
 import re
@@ -30,7 +30,6 @@ UA = (
     "Chrome/131.0.0.0 Safari/537.36"
 )
 
-# 分类：常用 c= 与 path（静态保证有数据）
 CHANNELS = [
     ("video", "最新"),
     ("video?o=ht", "当前热门"),
@@ -51,14 +50,10 @@ CHANNELS = [
     ("video?c=7", "肛交"),
     ("video?c=69", "自慰"),
     ("video?c=80", "群交"),
-    ("video?c=86", "双飞"),
-    ("video?c=181", "幕后"),
     ("categories/teen", "Teen"),
     ("categories/hentai", "Hentai"),
     ("gayporn", "男同"),
-    ("lesbian", "女同频道"),
     ("recommended", "推荐"),
-    ("shorties", "短视频"),
 ]
 
 
@@ -78,22 +73,24 @@ class Spider(BaseSpider):
         if requests is None:
             return None
         s = requests.Session()
-        s.headers.update({
-            "User-Agent": UA,
-            "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            "Referer": HOST + "/enter",
-        })
+        s.headers.update(
+            {
+                "User-Agent": UA,
+                "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "Referer": HOST + "/enter",
+            }
+        )
         s.cookies.set("x-index-auth", "authed", domain="cn.pornhub163.net", path="/")
         s.cookies.set("accessAgeDisclaimerPH", "1", domain="cn.pornhub163.net", path="/")
         s.cookies.set("accessAgeDisclaimerUA", "1", domain="cn.pornhub163.net", path="/")
         self.session = s
         return s
 
-    def _headers(self):
+    def _headers(self, referer=None):
         return {
             "User-Agent": UA,
-            "Referer": HOST + "/enter",
+            "Referer": referer or (HOST + "/enter"),
             "Accept-Language": "zh-CN,zh;q=0.9",
             "Accept": "text/html,application/xhtml+xml,*/*",
         }
@@ -106,14 +103,18 @@ class Spider(BaseSpider):
             return None
         js = m.group(1)
         js = js.replace("if (typeof phantom !== 'undefined') return 'phantom';", "")
-        js = js.replace("if (typeof module !== 'undefined' && module.exports) return 'node';", "")
+        js = js.replace(
+            "if (typeof module !== 'undefined' && module.exports) return 'node';", ""
+        )
         js += (
             "\nvar cookieStore='';var document={set cookie(v){cookieStore=v;},"
             "get cookie(){return cookieStore;},location:{reload:function(){}}};"
             "go();console.log(cookieStore);"
         )
         try:
-            out = subprocess.check_output(["node", "-e", js], text=True, timeout=10).strip()
+            out = subprocess.check_output(
+                ["node", "-e", js], text=True, timeout=10
+            ).strip()
             if "KEY=" in out:
                 return out.split("KEY=")[-1].split(";")[0]
         except Exception as e:
@@ -132,7 +133,9 @@ class Spider(BaseSpider):
                     if "leastFactor" in text and len(text) < 8000:
                         key = self._solve_key(text)
                         if key:
-                            s.cookies.set("KEY", key, domain="cn.pornhub163.net", path="/")
+                            s.cookies.set(
+                                "KEY", key, domain="cn.pornhub163.net", path="/"
+                            )
                             continue
                     return text
                 req = urllib.request.Request(url, headers=self._headers())
@@ -152,11 +155,36 @@ class Spider(BaseSpider):
         )
         return re.sub(r"\s+", " ", t).strip()
 
+    def _pick_cover(self, block):
+        """优先真实图片，避免 mp4 截图链当封面失败"""
+        cands = []
+        for m in re.finditer(
+            r'(?:data-image|data-thumb_url|data-mediumthumb|data-src|src)="(https?://[^"]+)"',
+            block,
+            re.I,
+        ):
+            u = m.group(1).strip()
+            low = u.lower()
+            if any(x in low for x in ("logo", "avatar", "icon", ".svg", "pixel")):
+                continue
+            cands.append(u)
+        # 优先 jpg/png/webp
+        for u in cands:
+            path = u.split("?")[0].lower()
+            if any(path.endswith(ext) for ext in (".jpg", ".jpeg", ".png", ".webp")):
+                return u
+            if "/plain/" in u and "rs:fit" in u and ".mp4" not in path:
+                return u
+        # 其次带 jpg 关键字
+        for u in cands:
+            if ".jpg" in u.lower() or "(m=" in u:
+                return u
+        return cands[0] if cands else ""
+
     def _parse_list(self, html):
         videos, seen = [], set()
         if not html:
             return videos
-        # href + title
         for m in re.finditer(
             r'href="(/view_video\.php\?viewkey=([a-zA-Z0-9]+))"[^>]*title="([^"]+)"',
             html,
@@ -167,44 +195,36 @@ class Spider(BaseSpider):
                 continue
             seen.add(vk)
             title = self._clean(m.group(3))
-            block = html[max(0, m.start() - 400) : m.start() + 600]
-            pic = ""
-            pm = re.search(
-                r'(?:data-mediumthumb|data-thumb_url|data-image|src)="(https?://[^"]+)"',
-                block,
-                re.I,
+            block = html[max(0, m.start() - 500) : m.start() + 900]
+            pic = self._pick_cover(block)
+            videos.append(
+                {
+                    "vod_id": vk,
+                    "vod_name": (title[:120] or vk),
+                    "vod_pic": pic,
+                    "vod_remarks": "HD",
+                    "style": {"type": "rect", "ratio": 1.5},
+                }
             )
-            if pm:
-                pic = pm.group(1)
-            videos.append({
-                "vod_id": vk,
-                "vod_name": title[:120] or vk,
-                "vod_pic": pic,
-                "vod_remarks": "HD",
-                "style": {"type": "rect", "ratio": 1.5},
-            })
         if len(videos) < 4:
-            for m in re.finditer(
-                r'data-video-vkey="([a-zA-Z0-9]+)"',
-                html,
-                re.I,
-            ):
+            for m in re.finditer(r'data-video-vkey="([a-zA-Z0-9]+)"', html, re.I):
                 vk = m.group(1)
                 if vk in seen:
                     continue
                 seen.add(vk)
-                block = html[max(0, m.start() - 200) : m.start() + 500]
+                block = html[max(0, m.start() - 300) : m.start() + 700]
                 tm = re.search(r'title="([^"]{3,120})"', block)
                 title = self._clean(tm.group(1)) if tm else vk
-                pm = re.search(r'data-mediumthumb="([^"]+)"', block)
-                pic = pm.group(1) if pm else ""
-                videos.append({
-                    "vod_id": vk,
-                    "vod_name": title[:120],
-                    "vod_pic": pic,
-                    "vod_remarks": "HD",
-                    "style": {"type": "rect", "ratio": 1.5},
-                })
+                pic = self._pick_cover(block)
+                videos.append(
+                    {
+                        "vod_id": vk,
+                        "vod_name": title[:120],
+                        "vod_pic": pic,
+                        "vod_remarks": "HD",
+                        "style": {"type": "rect", "ratio": 1.5},
+                    }
+                )
         return videos
 
     def _list_url(self, tid, pg):
@@ -267,40 +287,64 @@ class Spider(BaseSpider):
             "total": 9999 if videos else 0,
         }
 
-    def _extract_plays(self, html):
-        parts, seen = [], set()
-        # videoUrl fields
-        for m in re.finditer(r'videoUrl["\']?\s*:\s*["\']([^"\']+)["\']', html or ""):
-            u = m.group(1).replace("\\/", "/")
-            if u in seen or not u.startswith("http"):
-                continue
-            seen.add(u)
-            label = "HD"
-            qm = re.search(r"/(\d{3,4})P_", u, re.I)
-            if qm:
-                label = qm.group(1) + "P"
-            elif ".m3u8" in u:
-                label = "HLS"
-            elif ".mp4" in u:
-                label = "MP4"
-            parts.append("%s$%s" % (label, u))
-        # plain m3u8
-        for m in re.finditer(r"https?://[^\"'\s<>]+\.m3u8[^\"'\s<>]*", html or "", re.I):
-            u = m.group(0).replace("\\/", "/")
-            if u in seen:
-                continue
-            seen.add(u)
-            parts.append("HLS$%s" % u)
-        # get_media（可选）
-        gm = re.search(
-            r'(https?:\\?/\\?/cn\.pornhub163\.net\\?/video\\?/get_media[^"\']+)',
-            html or "",
+    def detailContent(self, ids):
+        vk = str((ids or [""])[0]).strip()
+        m = re.search(r"viewkey=([a-zA-Z0-9]+)", vk)
+        if m:
+            vk = m.group(1)
+        if not vk:
+            return {"list": []}
+        html = self.fetch_text(HOST + "/embed/" + vk)
+        if len(html) < 2000:
+            html = self.fetch_text(HOST + "/view_video.php?viewkey=" + vk)
+        name = vk
+        pic = ""
+        m = re.search(
+            r'property=["\']og:title["\'][^>]*content=["\']([^"\']+)', html or "", re.I
         )
-        if not gm:
-            gm = re.search(r'(https://cn\.pornhub163\.net/video/get_media[^"\']+)', html or "")
+        if m:
+            name = self._clean(m.group(1))
+        else:
+            m = re.search(r"<title>([^<]+)</title>", html or "", re.I)
+            if m:
+                name = self._clean(re.sub(r"\s*[-|].*$", "", m.group(1)))
+        if not name or name.lower() in ("embed player", "pornhub", "embed player - pornhub.com"):
+            name = vk
+        m = re.search(
+            r'property=["\']og:image["\'][^>]*content=["\']([^"\']+)', html or "", re.I
+        )
+        if m:
+            pic = m.group(1)
+        # 播放项：仅传 viewkey，播放时实时取流（避免签名过期）
+        plays = self._probe_qualities(html, vk)
+        if not plays:
+            plays = ["播放$%s" % vk]
+        return {
+            "list": [
+                {
+                    "vod_id": vk,
+                    "vod_name": name,
+                    "vod_pic": pic,
+                    "vod_remarks": "HD",
+                    "vod_content": "viewkey: " + vk,
+                    "vod_play_from": "PH163",
+                    "vod_play_url": "#".join(plays),
+                    "style": {"type": "rect", "ratio": 1.5},
+                }
+            ]
+        }
+
+    def _probe_qualities(self, html, vk):
+        """从页面探测可用清晰度标签，地址仍用 viewkey 实时解析"""
+        labels = []
+        seen = set()
+        # get_media
+        gm = re.search(
+            r"(https://cn\.pornhub163\.net/video/get_media[^\"']+)",
+            (html or "").replace("\\/", "/"),
+        )
         if gm:
-            gurl = gm.group(1).replace("\\/", "/")
-            ghtml = self.fetch_text(gurl)
+            ghtml = self.fetch_text(gm.group(1))
             if ghtml and ghtml.strip()[:1] in "[{":
                 try:
                     data = json.loads(ghtml)
@@ -309,214 +353,211 @@ class Spider(BaseSpider):
                             if not isinstance(item, dict):
                                 continue
                             u = (item.get("videoUrl") or "").replace("\\/", "/")
-                            if not u or u in seen:
+                            if not u:
                                 continue
-                            seen.add(u)
-                            q = str(item.get("quality") or "HD")
+                            q = str(item.get("quality") or item.get("height") or "")
+                            m = re.search(r"\d{3,4}", q)
+                            lab = (m.group(0) + "P") if m else "HD"
                             fmt = str(item.get("format") or "")
-                            label = (q + "P" if q.isdigit() else q) + (("·" + fmt) if fmt else "")
-                            parts.append("%s$%s" % (label, u))
+                            if "hls" in u or ".m3u8" in u or fmt.lower() == "hls":
+                                lab = lab + "·HLS"
+                            if lab not in seen:
+                                seen.add(lab)
+                                labels.append("%s$%s" % (lab, vk))
                 except Exception:
                     pass
-        # 去重保序，清晰度高优先
-        def score(p):
-            n = p.split("$")[0]
-            m = re.search(r"(\d{3,4})", n)
+        for mm in re.finditer(
+            r'videoUrl["\']?\s*:\s*["\']([^"\']+)["\']', html or ""
+        ):
+            u = mm.group(1).replace("\\/", "/")
+            if not u.startswith("http"):
+                continue
+            qm = re.search(r"/(\d{3,4})P_", u, re.I)
+            lab = (qm.group(1) + "P") if qm else ("HLS" if ".m3u8" in u or "/hls/" in u else "HD")
+            if lab not in seen:
+                seen.add(lab)
+                labels.append("%s$%s" % (lab, vk))
+        if not labels:
+            labels = ["1080P$%s" % vk, "720P$%s" % vk, "480P$%s" % vk]
+        # 高清优先
+        def sc(x):
+            m = re.search(r"(\d{3,4})", x)
             return int(m.group(1)) if m else 0
 
-        parts = sorted(parts, key=score, reverse=True)
-        return parts
-
-    def detailContent(self, ids):
-        vk = str((ids or [""])[0]).strip()
-        m = re.search(r"viewkey=([a-zA-Z0-9]+)", vk)
-        if m:
-            vk = m.group(1)
-        if not vk:
-            return {"list": []}
-        # 优先 embed（更易出流）
-        html = self.fetch_text(HOST + "/embed/" + vk)
-        if len(html) < 5000:
-            html = self.fetch_text(HOST + "/view_video.php?viewkey=" + vk)
-        name = vk
-        pic = ""
-        m = re.search(r"<title>([^<]+)</title>", html or "", re.I)
-        if m:
-            name = self._clean(re.sub(r"\s*[-|].*$", "", m.group(1)))
-        m = re.search(r'property=["\']og:title["\'][^>]*content=["\']([^"\']+)', html or "", re.I)
-        if m:
-            name = self._clean(m.group(1))
-        m = re.search(r'property=["\']og:image["\'][^>]*content=["\']([^"\']+)', html or "", re.I)
-        if m:
-            pic = m.group(1)
-        plays = self._extract_plays(html)
-        # 播放项用 viewkey，避免 m3u8 签名过期；play 时实时解析
-        if plays:
-            # 保留清晰度标签，地址改回 viewkey（player 再解）
-            labeled = []
-            for p in plays[:8]:
-                lab = p.split("$")[0] if "$" in p else "HD"
-                labeled.append("%s$%s" % (lab, vk))
-            # 去重标签
-            seen_lab, final = set(), []
-            for x in labeled:
-                lab = x.split("$")[0]
-                if lab in seen_lab:
-                    continue
-                seen_lab.add(lab)
-                final.append(x)
-            plays = final or ["播放$%s" % vk]
-        else:
-            plays = ["播放$%s" % vk]
-        # 标题兜底：embed 常为 Embed Player，用列表页名更好
-        if not name or name.lower() in ("embed player", "pornhub", vk):
-            name = vk
-        return {"list": [{
-            "vod_id": vk,
-            "vod_name": name,
-            "vod_pic": pic,
-            "vod_remarks": "HD",
-            "vod_content": "viewkey: " + vk,
-            "vod_play_from": "PH163",
-            "vod_play_url": "#".join(plays),
-            "style": {"type": "rect", "ratio": 1.5},
-        }]}
-
+        labels = sorted(labels, key=sc, reverse=True)
+        return labels[:8]
 
     def _resolve_m3u8(self, url):
-        """把 master.m3u8 解析成媒体播放列表绝对地址"""
         from urllib.parse import urljoin
-        u = str(url or '').strip()
-        if not u or '.m3u8' not in u:
+
+        u = str(url or "").strip()
+        if not u or ".m3u8" not in u:
             return u
-        if 'index-v' in u:
+        if "index-v" in u or "chunk" in u:
             return u
         try:
-            cdn_m = re.match(r'https?://([^/]+)', u)
-            cdn = cdn_m.group(1) if cdn_m else ''
+            cdn_m = re.match(r"https?://([^/]+)", u)
+            cdn = cdn_m.group(1) if cdn_m else ""
             headers = {
-                'User-Agent': UA,
-                'Referer': ('https://%s/' % cdn) if cdn else (HOST + '/'),
-                'Accept': '*/*',
+                "User-Agent": UA,
+                "Referer": ("https://%s/" % cdn) if cdn else (HOST + "/"),
+                "Accept": "*/*",
             }
             s = self._sess()
-            body = ''
+            body = ""
             if s is not None:
                 r = s.get(u, headers=headers, timeout=15, verify=False)
-                body = r.text or ''
-            else:
-                body = self.fetch_text(u)
-            if body and '#EXT-X-STREAM-INF' in body:
+                body = r.text or ""
+            if body and "#EXT-X-STREAM-INF" in body:
                 for ln in body.splitlines():
                     ln = ln.strip()
-                    if ln and not ln.startswith('#'):
+                    if ln and not ln.startswith("#"):
                         return urljoin(u, ln)
         except Exception as e:
-            print('resolve m3u8 err', e)
+            print("resolve m3u8 err", e)
         return u
 
-    def playerContent(self, flag, id, vipFlags=None):
-        # 实时解析，优先 MP4，其次媒体 m3u8（非 master）
-        play = str(id or '').strip()
-        if '$' in play:
-            play = play.split('$')[-1].strip()
-        vk = play
-        m = re.search(r'viewkey=([a-zA-Z0-9]+)', play)
-        if m:
-            vk = m.group(1)
-        elif re.match(r'^[a-zA-Z0-9]+$', play) and 'http' not in play:
-            vk = play
-        elif play.startswith('http') and re.search(r'\.(m3u8|mp4)(\?|$)', play, re.I):
-            u = play
-            if '.m3u8' in u:
-                u = self._resolve_m3u8(u)
-            cdn_m = re.match(r'https?://([^/]+)', u)
-            cdn = cdn_m.group(1) if cdn_m else ''
-            header = {
-                'User-Agent': UA,
-                'Referer': ('https://%s/' % cdn) if cdn else (HOST + '/'),
-                'Accept': '*/*',
-            }
-            return {
-                'parse': 0, 'jx': 0, 'url': u, 'header': header,
-                'format': 'application/x-mpegURL' if '.m3u8' in u.lower() else 'video/mp4',
-            }
-        else:
-            vk = re.sub(r'[^a-zA-Z0-9]', '', play)
-
-        html = self.fetch_text(HOST + '/embed/' + vk)
-        if '站点维护' in (html or '') or len(html or '') < 1000:
-            html = self.fetch_text(HOST + '/view_video.php?viewkey=' + vk)
-
-        candidates = []  # (score, label, url)
-        # 1) get_media
-        gm = re.search(r'(https://cn\.pornhub163\.net/video/get_media[^"\']+)', (html or '').replace('\\/', '/'))
+    def _collect_streams(self, html):
+        """返回 [(score, label, url), ...]"""
+        cands = []
+        # get_media JSON
+        gm = re.search(
+            r"(https://cn\.pornhub163\.net/video/get_media[^\"']+)",
+            (html or "").replace("\\/", "/"),
+        )
         if gm:
             ghtml = self.fetch_text(gm.group(1))
-            if ghtml and ghtml.strip()[:1] in '[{':
+            if ghtml and ghtml.strip()[:1] in "[{":
                 try:
                     data = json.loads(ghtml)
                     if isinstance(data, list):
                         for item in data:
                             if not isinstance(item, dict):
                                 continue
-                            u = (item.get('videoUrl') or '').replace('\\/', '/')
-                            if not u:
+                            u = (item.get("videoUrl") or "").replace("\\/", "/")
+                            if not u.startswith("http"):
                                 continue
-                            q = str(item.get('quality') or item.get('height') or '0')
-                            try:
-                                qi = int(re.search(r'\d+', q).group()) if re.search(r'\d+', q) else 0
-                            except Exception:
-                                qi = 0
-                            fmt = str(item.get('format') or '')
-                            sc = qi + (5000 if '.m3u8' in u else 0)  # m3u8 优先，mp4 常绑定服务器 IP
-                            lab = (str(qi) + 'P') if qi else 'HD'
-                            if fmt:
-                                lab += '·' + fmt
-                            candidates.append((sc, lab, u))
+                            q = str(item.get("quality") or item.get("height") or "0")
+                            m = re.search(r"\d+", q)
+                            qi = int(m.group()) if m else 0
+                            fmt = str(item.get("format") or "").lower()
+                            is_hls = (
+                                ".m3u8" in u
+                                or "/hls/" in u
+                                or fmt in ("hls", "m3u8")
+                            )
+                            # HLS 优先（mp4 常绑定取流 IP）
+                            sc = qi + (10000 if is_hls else 0)
+                            lab = (str(qi) + "P") if qi else "HD"
+                            if is_hls:
+                                lab += "·HLS"
+                            cands.append((sc, lab, u))
                 except Exception as e:
-                    print('get_media err', e)
-        # 2) embed videoUrl
-        for mm in re.finditer(r'videoUrl["\']?\s*:\s*["\']([^"\']+)["\']', html or ''):
-            u = mm.group(1).replace('\\/', '/')
-            if not u.startswith('http'):
+                    print("get_media err", e)
+        # videoUrl 字段
+        for mm in re.finditer(
+            r'videoUrl["\']?\s*:\s*["\']([^"\']+)["\']', html or ""
+        ):
+            u = mm.group(1).replace("\\/", "/")
+            if not u.startswith("http"):
                 continue
-            qm = re.search(r'/(\d{3,4})P_', u, re.I)
+            if "get_media" in u:
+                continue
+            qm = re.search(r"/(\d{3,4})P_", u, re.I)
             qi = int(qm.group(1)) if qm else 480
-            sc = qi + (5000 if '.m3u8' in u else 0)  # m3u8 优先，mp4 常绑定服务器 IP
-            lab = str(qi) + 'P'
-            candidates.append((sc, lab, u))
+            is_hls = ".m3u8" in u or "/hls/" in u
+            sc = qi + (10000 if is_hls else 0)
+            lab = str(qi) + "P" + ("·HLS" if is_hls else "")
+            cands.append((sc, lab, u))
+        # 裸 m3u8
+        for mm in re.finditer(
+            r"https?://[^\"'\s<>\\]+\.m3u8[^\"'\s<>\\]*", (html or "").replace("\\/", "/")
+        ):
+            u = mm.group(0)
+            cands.append((15000, "HLS", u))
+        return cands
 
+    def playerContent(self, flag, id, vipFlags=None):
+        play = str(id or "").strip()
+        if "$" in play:
+            play = play.split("$")[-1].strip()
+        vk = play
+        m = re.search(r"viewkey=([a-zA-Z0-9]+)", play)
+        if m:
+            vk = m.group(1)
+        elif re.match(r"^[a-zA-Z0-9]+$", play) and "http" not in play:
+            vk = play
+        elif play.startswith("http") and re.search(
+            r"\.(m3u8|mp4)(\?|$)", play, re.I
+        ):
+            u = play
+            if ".m3u8" in u:
+                u = self._resolve_m3u8(u)
+            cdn_m = re.match(r"https?://([^/]+)", u)
+            cdn = cdn_m.group(1) if cdn_m else ""
+            return {
+                "parse": 0,
+                "jx": 0,
+                "url": u,
+                "header": {
+                    "User-Agent": UA,
+                    "Referer": ("https://%s/" % cdn) if cdn else (HOST + "/"),
+                    "Accept": "*/*",
+                },
+                "format": "application/x-mpegURL"
+                if ".m3u8" in u.lower()
+                else "video/mp4",
+            }
+        else:
+            vk = re.sub(r"[^a-zA-Z0-9]", "", play)
+
+        html = self.fetch_text(HOST + "/embed/" + vk)
+        if "站点维护" in (html or "") or len(html or "") < 1000:
+            html = self.fetch_text(HOST + "/view_video.php?viewkey=" + vk)
+
+        candidates = self._collect_streams(html)
         if not candidates:
-            page = HOST + '/view_video.php?viewkey=' + vk
-            return {'parse': 1, 'jx': 0, 'url': page, 'header': {
-                'User-Agent': UA, 'Referer': HOST + '/',
-            }}
+            page = HOST + "/view_video.php?viewkey=" + vk
+            return {
+                "parse": 1,
+                "jx": 0,
+                "url": page,
+                "header": {"User-Agent": UA, "Referer": HOST + "/"},
+            }
 
         candidates.sort(key=lambda x: x[0], reverse=True)
-        # flag 匹配
         chosen = candidates[0]
         if flag:
+            fl = str(flag)
             for c in candidates:
-                if str(flag).split('·')[0] in c[1]:
+                if fl.split("·")[0] in c[1] or fl in c[1]:
                     chosen = c
                     break
         u = chosen[2]
-        if '.m3u8' in u:
+        # HLS 路径无扩展名时补 master
+        if "/hls/" in u and ".m3u8" not in u and ".mp4" not in u:
+            if not u.endswith("/"):
+                # 常见形式 .../480P_2000K_xxxx  → 尝试加 .m3u8
+                u2 = u + ".m3u8"
+                u = u2
+        if ".m3u8" in u:
             u = self._resolve_m3u8(u)
-        cdn_m = re.match(r'https?://([^/]+)', u)
-        cdn = cdn_m.group(1) if cdn_m else ''
+        cdn_m = re.match(r"https?://([^/]+)", u)
+        cdn = cdn_m.group(1) if cdn_m else ""
         header = {
-            'User-Agent': UA,
-            'Referer': ('https://%s/' % cdn) if cdn else (HOST + '/embed/' + vk),
-            'Accept': '*/*',
+            "User-Agent": UA,
+            "Referer": ("https://%s/" % cdn) if cdn else (HOST + "/embed/" + vk),
+            "Accept": "*/*",
         }
-        # 不带 Origin，部分播放器会因 CORS/Origin 失败
         return {
-            'parse': 0, 'jx': 0, 'url': u, 'header': header,
-            'format': 'application/x-mpegURL' if '.m3u8' in u.lower() else 'video/mp4',
+            "parse": 0,
+            "jx": 0,
+            "url": u,
+            "header": header,
+            "format": "application/x-mpegURL"
+            if ".m3u8" in u.lower() or "/hls/" in u
+            else "video/mp4",
         }
-
 
     def isVideoFormat(self, url):
         return bool(url and re.search(r"\.(mp4|m3u8)(\?|$)", str(url), re.I))
@@ -526,20 +567,3 @@ class Spider(BaseSpider):
 
     def localProxy(self, param):
         return None
-
-
-if __name__ == "__main__":
-    sp = Spider()
-    sp.init()
-    print("home", [c["type_name"] for c in sp.homeContent(False)["class"][:6]])
-    hv = sp.homeVideoContent()
-    print("homeVod", len(hv.get("list") or []))
-    if hv.get("list"):
-        print(" first", hv["list"][0].get("vod_name")[:40])
-        d = sp.detailContent([hv["list"][0]["vod_id"]])
-        main = (d.get("list") or [{}])[0]
-        print("detail", main.get("vod_name"), (main.get("vod_play_url") or "")[:100])
-        pu = (main.get("vod_play_url") or "").split("#")[0]
-        if "$" in pu:
-            p = sp.playerContent("PH163", pu.split("$", 1)[1], [])
-            print("play", p.get("parse"), str(p.get("url"))[:90])
