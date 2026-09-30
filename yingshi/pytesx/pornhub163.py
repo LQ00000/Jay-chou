@@ -32,26 +32,25 @@ UA = (
 
 CHANNELS = [
     ("video", "最新"),
-    ("video?o=ht", "当前热门"),
-    ("video?o=mv", "最多观看"),
-    ("video?o=tr", "最高评分"),
-    ("video?c=27", "少女"),
-    ("video?c=29", "熟女"),
-    ("video?c=35", "女同"),
-    ("video?c=65", "素人"),
-    ("video?c=28", "亚洲"),
-    ("video?c=17", "日本AV"),
-    ("video?c=111", "中文"),
-    ("video?c=8", "按摩"),
-    ("video?c=22", "口交"),
-    ("video?c=24", "三人"),
-    ("video?c=10", "角色扮演"),
-    ("video?c=15", "颜射"),
-    ("video?c=7", "肛交"),
-    ("video?c=69", "自慰"),
-    ("video?c=80", "群交"),
-    ("categories/teen", "Teen"),
-    ("categories/hentai", "Hentai"),
+    ("o_ht", "当前热门"),
+    ("o_mv", "最多观看"),
+    ("o_tr", "最高评分"),
+    ("c_27", "少女"),
+    ("c_29", "熟女"),
+    ("c_35", "女同"),
+    ("c_65", "素人"),
+    ("c_28", "亚洲"),
+    ("c_17", "日本AV"),
+    ("c_111", "中文"),
+    ("c_8", "按摩"),
+    ("c_22", "口交"),
+    ("c_24", "三人"),
+    ("c_10", "角色扮演"),
+    ("c_15", "颜射"),
+    ("c_7", "肛交"),
+    ("c_69", "自慰"),
+    ("c_80", "群交"),
+    ("c_1", "亚洲精选"),
     ("gayporn", "男同"),
     ("recommended", "推荐"),
 ]
@@ -156,28 +155,27 @@ class Spider(BaseSpider):
         return re.sub(r"\s+", " ", t).strip()
 
     def _pick_cover(self, block):
-        """优先真实图片，避免 mp4 截图链当封面失败"""
+        """优先真实图片；兼容换行 src"""
         cands = []
+        # 允许属性换行：src\n="http..."
         for m in re.finditer(
-            r'(?:data-image|data-thumb_url|data-mediumthumb|data-src|src)="(https?://[^"]+)"',
+            r'(?:data-image|data-thumb_url|data-mediumthumb|data-src|src)\s*=\s*"(https?://[^"]+)"',
             block,
             re.I,
         ):
-            u = m.group(1).strip()
+            u = m.group(1).strip().replace("&amp;", "&")
             low = u.lower()
-            if any(x in low for x in ("logo", "avatar", "icon", ".svg", "pixel")):
+            if any(x in low for x in ("logo", "avatar", "icon", ".svg", "pixel.gif")):
                 continue
             cands.append(u)
-        # 优先 jpg/png/webp
         for u in cands:
             path = u.split("?")[0].lower()
             if any(path.endswith(ext) for ext in (".jpg", ".jpeg", ".png", ".webp")):
                 return u
-            if "/plain/" in u and "rs:fit" in u and ".mp4" not in path:
+            if ".jpg" in low or "(m=" in u or "/original/" in u:
                 return u
-        # 其次带 jpg 关键字
         for u in cands:
-            if ".jpg" in u.lower() or "(m=" in u:
+            if ".mp4" not in u.lower():
                 return u
         return cands[0] if cands else ""
 
@@ -185,17 +183,26 @@ class Spider(BaseSpider):
         videos, seen = [], set()
         if not html:
             return videos
-        for m in re.finditer(
-            r'href="(/view_video\.php\?viewkey=([a-zA-Z0-9]+))"[^>]*title="([^"]+)"',
-            html,
-            re.I,
-        ):
-            vk = m.group(2)
+        # 按列表项切块，封面与标题更稳
+        blocks = re.split(r'class="[^"]*pcVideoListItem', html)
+        if len(blocks) < 2:
+            blocks = re.split(r'class="[^"]*phimage', html)
+        for block in blocks[1:]:
+            vm = re.search(r'viewkey=([a-zA-Z0-9]+)', block)
+            if not vm:
+                continue
+            vk = vm.group(1)
             if vk in seen:
                 continue
             seen.add(vk)
-            title = self._clean(m.group(3))
-            block = html[max(0, m.start() - 500) : m.start() + 900]
+            title = ""
+            tm = re.search(r'title="([^"]{2,200})"', block)
+            if tm:
+                title = self._clean(tm.group(1))
+            if not title:
+                tm = re.search(r'alt="([^"]{2,200})"', block)
+                if tm:
+                    title = self._clean(tm.group(1))
             pic = self._pick_cover(block)
             videos.append(
                 {
@@ -207,20 +214,21 @@ class Spider(BaseSpider):
                 }
             )
         if len(videos) < 4:
-            for m in re.finditer(r'data-video-vkey="([a-zA-Z0-9]+)"', html, re.I):
-                vk = m.group(1)
+            for m in re.finditer(
+                r'href="(/view_video\.php\?viewkey=([a-zA-Z0-9]+))"[^>]*title="([^"]+)"',
+                html,
+                re.I,
+            ):
+                vk = m.group(2)
                 if vk in seen:
                     continue
                 seen.add(vk)
-                block = html[max(0, m.start() - 300) : m.start() + 700]
-                tm = re.search(r'title="([^"]{3,120})"', block)
-                title = self._clean(tm.group(1)) if tm else vk
-                pic = self._pick_cover(block)
+                block = html[max(0, m.start() - 200) : m.start() + 1200]
                 videos.append(
                     {
                         "vod_id": vk,
-                        "vod_name": title[:120],
-                        "vod_pic": pic,
+                        "vod_name": self._clean(m.group(3))[:120] or vk,
+                        "vod_pic": self._pick_cover(block),
                         "vod_remarks": "HD",
                         "style": {"type": "rect", "ratio": 1.5},
                     }
@@ -230,9 +238,18 @@ class Spider(BaseSpider):
     def _list_url(self, tid, pg):
         pg = int(pg or 1)
         tid = str(tid or "video").strip()
+        # 兼容旧 id 与 app 传参
         if tid in ("home", "latest", ""):
             tid = "video"
-        if tid.startswith("http"):
+        if tid.startswith("video?c="):
+            tid = "c_" + tid.split("=", 1)[-1]
+        if tid.startswith("video?o="):
+            tid = "o_" + tid.split("=", 1)[-1]
+        if tid.startswith("c_"):
+            base = HOST + "/video?c=" + tid[2:]
+        elif tid.startswith("o_"):
+            base = HOST + "/video?o=" + tid[2:]
+        elif tid.startswith("http"):
             base = tid
         elif tid.startswith("/"):
             base = HOST + tid
