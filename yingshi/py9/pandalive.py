@@ -156,33 +156,56 @@ class Spider(Spider):
         return play_id
 
     # ========== 修改：_live_play 接收 userId，并打印请求 URL ==========
-    def _live_play(self, user_id):
-        """获取直播流地址，返回完整 JSON，user_id 应为纯数字"""
-        if not user_id:
+    def _live_play(self, user_id, play_id=''):
+        """获取直播流地址。优先纯数字 userIdx，多参数兜底。"""
+        if not user_id and not play_id:
             return {'result': False, 'error': 'empty user_id'}
+        num_id = self._extract_user_id(play_id or user_id)
+        candidates = []
+        for v in (num_id, user_id, play_id):
+            v = str(v or '').strip()
+            if v and v not in candidates:
+                candidates.append(v)
         headers = self._with_x_device_info(dict(self.session.headers))
-        headers['Referer'] = f'{self.base}/play/{user_id}'
-        params = {
-            'userId': user_id,
-            'action': 'watch'
-        }
-        # 构造完整 URL 用于调试打印
+        headers['Referer'] = f'{self.base}/play/{play_id or user_id}'
         full_url = f"{self.api}/v1/live/play"
-        print(f"[DEBUG] API 请求 URL: {full_url}")
-        print(f"[DEBUG] 请求参数: {params}")
+        last = {'result': False, 'error': 'no attempt'}
         try:
-            r = self.session.get(full_url, headers=headers, params=params, timeout=8)
-            print(f"[DEBUG] API 响应状态码: {r.status_code}")
-            if r.status_code != 200:
-                # 尝试刷新 token 后重试
-                print("[DEBUG] 状态码非200，尝试刷新 token")
-                self._app_token()
-                r = self.session.get(full_url, headers=headers, params=params, timeout=8)
-                print(f"[DEBUG] 重试后状态码: {r.status_code}")
-            return r.json()
+            self._app_token()
+        except Exception:
+            pass
+        for uid in candidates:
+            for params in (
+                {'userId': uid, 'action': 'watch'},
+                {'userIdx': uid, 'action': 'watch'},
+                {'userId': uid},
+            ):
+                try:
+                    print(f"[DEBUG] play try {params}")
+                    r = self.session.get(full_url, headers=headers, params=params, timeout=10)
+                    try:
+                        j = r.json()
+                    except Exception:
+                        j = {'result': False, 'error': r.text[:120]}
+                    last = j if isinstance(j, dict) else {'result': False}
+                    if last.get('result') is True or self._extract_m3u8_from_play(last):
+                        return last
+                    # IP 封禁直接返回
+                    msg = str(last.get('message') or last.get('error') or '')
+                    if '제재' in msg or 'block' in msg.lower() or '封' in msg:
+                        return last
+                except Exception as e:
+                    last = {'result': False, 'error': str(e)}
+        # HTML 页面兜底嗅探 m3u8
+        page_id = play_id or user_id
+        try:
+            html = self.session.get(f'{self.base}/play/{page_id}', headers=headers, timeout=10).text
+            m = re.search(r'https?://[^"\'\s]+\.m3u8[^"\'\s]*', html or '')
+            if m:
+                return {'result': True, 'PlayList': {'hls': [{'url': m.group(0)}]}}
         except Exception as e:
-            print(f"[DEBUG] API 请求异常: {e}")
-            return {'result': False, 'error': str(e)}
+            print(f"[DEBUG] html fallback {e}")
+        return last
 
     def _with_x_device_info(self, headers):
         try:
@@ -338,31 +361,44 @@ class Spider(Spider):
                 continue
         return result
 
-    # ========== detailContent 打印详情页链接，并确保 vod_id 正确 ==========
+    # ========== detailContent：解析多清晰度 ==========
     def detailContent(self, ids):
         vid = ids[0]
-        parts = vid.split('|')
-        play_id = parts[0]          # 可能是 "24431142_xxx" 或 "24431142"
+        parts = str(vid).split('|')
+        play_id = parts[0]
         user_id = parts[1] if len(parts) > 1 else self._extract_user_id(play_id)
         title = parts[2] if len(parts) > 2 else user_id
+        if not str(user_id).isdigit():
+            user_id = self._extract_user_id(play_id) or user_id
 
-        # 调试：打印详情页链接（即播放页面链接，这里用原始 play_id 构造）
         detail_url = f"{self.base}/play/{play_id}"
         print(f"[DEBUG] 详情页链接: {detail_url}")
 
+        # 预拉取流地址，生成分辨率列表
+        data = self._live_play(user_id, play_id)
+        streams = self._extract_streams_from_play(data)
+        if streams:
+            # 多清晰度：720p$url#480p$url2
+            play_url = '#'.join('%s$%s' % (lab, url) for lab, url in streams)
+            play_from = 'PandaLive'
+        else:
+            # 失败时仍把 vid 交给 playerContent 再试
+            play_url = '直播$%s' % vid
+            play_from = 'PandaLive'
+
         vod = {
-            "vod_id": vid,          # 保持原样，内部可能包含完整 play_id
+            "vod_id": vid,
             "vod_name": title,
             "vod_pic": "",
             "type_name": "LIVE",
             "vod_year": "",
             "vod_area": "",
-            "vod_remarks": "PandaLive",
+            "vod_remarks": "分辨率可选" if len(streams) > 1 else "PandaLive",
             "vod_actor": "",
             "vod_director": "",
             "vod_content": title,
-            "vod_play_from": "IVS",
-            "vod_play_url": f"直播${vid}"
+            "vod_play_from": play_from,
+            "vod_play_url": play_url,
         }
         return {"list": [vod]}
 
@@ -384,38 +420,62 @@ class Spider(Spider):
             vid = id
             parts = vid.split('|')
             play_id = parts[0]          # 可能是 "24431142_xxx" 或 "24431142"
-            # 提取纯数字 userId
-            user_id = self._extract_user_id(play_id)
+            user_id = parts[1] if len(parts) > 1 else self._extract_user_id(play_id)
+            if not str(user_id).isdigit():
+                user_id = self._extract_user_id(play_id) or user_id
             print(f"[DEBUG] 原始 play_id: {play_id}")
             print(f"[DEBUG] 提取的 user_id: {user_id}")
 
-            # 调用 API 获取直播信息
-            data = self._live_play(user_id)
+            # 调用 API 获取直播信息（多参数 + HTML 兜底）
+            data = self._live_play(user_id, play_id)
             print(f"[DEBUG] 直播 API 返回数据预览: {json.dumps(data, ensure_ascii=False)[:500]}...")
             channel = str(data.get('channel') or self._extract_user_idx_from_play(data) or user_id)
             token = str(data.get('token') or '')
             self.start_danmu(channel, token, data)
             danmaku_url = self.getProxyUrl() + '&type=danmu&channel=' + channel
 
-            # 提取 m3u8 地址
-            m3u8 = self._extract_m3u8_from_play(data)
+            # 已是 m3u8 直链（详情里选的清晰度）
+            if str(id).startswith('http') and '.m3u8' in str(id):
+                return {
+                    "parse": 0,
+                    "playUrl": "",
+                    "url": str(id).strip(),
+                    "header": self._play_headers(),
+                    "danmaku": danmaku_url,
+                }
+            raw_id = str(id or '')
+            if '$' in raw_id:
+                raw_id = raw_id.split('$')[-1].strip()
+            if raw_id.startswith('http') and '.m3u8' in raw_id:
+                return {
+                    "parse": 0,
+                    "playUrl": "",
+                    "url": raw_id,
+                    "header": self._play_headers(),
+                    "danmaku": danmaku_url,
+                }
+
+            # 提取多清晰度，默认最高
+            streams = self._extract_streams_from_play(data)
+            m3u8 = streams[0][1] if streams else ''
             if m3u8:
-                print(f"[DEBUG] 获取到直链播放地址: {m3u8}")
+                print(f"[DEBUG] 获取到直链播放地址: {m3u8} 清晰度数={len(streams)}")
                 return {
                     "parse": 0,
                     "playUrl": "",
                     "url": m3u8,
                     "header": self._play_headers(),
-                    "danmaku": danmaku_url
+                    "danmaku": danmaku_url,
                 }
             else:
-                print("[DEBUG] 未获取到直链，使用嗅探模式")
+                msg = str((data or {}).get('message') or (data or {}).get('error') or '')
+                print(f"[DEBUG] 未获取到直链: {msg[:80]}，使用嗅探模式")
                 return {
                     "parse": 1,
                     "playUrl": "",
                     "url": f"{self.base}/play/{play_id}",
                     "header": self._play_headers(),
-                    "danmaku": danmaku_url
+                    "danmaku": danmaku_url,
                 }
         except Exception as e:
             print(f"[DEBUG] playerContent 异常: {e}")
@@ -937,26 +997,86 @@ class Spider(Spider):
         except Exception:
             return ''
 
-    # ========== 辅助方法：从 API 响应中提取 m3u8 ==========
-    def _extract_m3u8_from_play(self, data):
-        """从 /v1/live/play 的 JSON 响应中提取第一个有效的 m3u8 地址"""
+    # ========== 辅助方法：从 API 响应中提取 m3u8（多清晰度）==========
+    def _stream_label(self, item, idx=0):
+        if not isinstance(item, dict):
+            return '线路%d' % (idx + 1)
+        for k in ('resolution', 'quality', 'label', 'name', 'height', 'desc', 'type'):
+            v = item.get(k)
+            if v is None or v == '':
+                continue
+            s = str(v).strip()
+            if s.isdigit():
+                return s + 'p'
+            if re.search(r'\d{3,4}\s*[pP]', s):
+                return s.replace(' ', '')
+            if s.lower() in ('src', 'source', 'origin', 'original', 'auto'):
+                return '原画'
+            if s:
+                return s[:16]
+        url = str(item.get('url') or '')
+        m = re.search(r'[_/](\d{3,4})[pP]', url)
+        if m:
+            return m.group(1) + 'p'
+        return '线路%d' % (idx + 1)
+
+    def _extract_streams_from_play(self, data):
+        """返回 [(label, url), ...]，高清优先去重"""
+        out = []
+        seen = set()
         try:
-            # 优先取 PlayList.hls[0].url
-            play_list = data.get('PlayList', {})
-            for key in ['hls', 'hls2', 'hls3']:
-                streams = play_list.get(key, [])
-                if streams and isinstance(streams, list) and len(streams) > 0:
-                    url = streams[0].get('url')
-                    if url and url.startswith('http'):
-                        return url
-            # 如果 PlayList 结构异常，尝试正则全局查找 m3u8
-            text = json.dumps(data, ensure_ascii=False)
-            m = re.search(r'https?://[^\s"\\]+\.m3u8[^\s"\\]*', text)
-            if m:
-                return m.group(0)
-        except Exception:
-            pass
-        return ''
+            play_list = {}
+            if isinstance(data, dict):
+                play_list = data.get('PlayList') or data.get('playList') or data.get('playlist') or {}
+            if isinstance(play_list, dict):
+                for key in ('hls', 'hls2', 'hls3', 'llhls', 'HLS', 'src', 'default'):
+                    streams = play_list.get(key)
+                    if isinstance(streams, dict):
+                        streams = [streams]
+                    if not isinstance(streams, list):
+                        continue
+                    for i, it in enumerate(streams):
+                        if isinstance(it, str) and it.startswith('http'):
+                            url, label = it, key.upper()
+                        elif isinstance(it, dict):
+                            url = it.get('url') or it.get('src') or it.get('file') or ''
+                            label = self._stream_label(it, i)
+                        else:
+                            continue
+                        url = str(url or '').replace('\\/', '/').strip()
+                        if not url.startswith('http') or url in seen:
+                            continue
+                        seen.add(url)
+                        out.append((label, url))
+            # media 字段兜底
+            if isinstance(data, dict):
+                media = data.get('media') or {}
+                if isinstance(media, dict):
+                    for k in ('url', 'hls', 'src', 'playUrl'):
+                        u = media.get(k)
+                        if isinstance(u, str) and u.startswith('http') and u not in seen:
+                            seen.add(u)
+                            out.append(('原画', u.replace('\\/', '/')))
+            if not out:
+                text = json.dumps(data or {}, ensure_ascii=False)
+                for u in re.findall(r'https?://[^\s"\\]+\.m3u8[^\s"\\]*', text):
+                    u = u.replace('\\/', '/')
+                    if u not in seen:
+                        seen.add(u)
+                        out.append(('HLS', u))
+        except Exception as e:
+            print('[DEBUG] extract streams', e)
+        # 按分辨率数字排序（大在前）
+        def _score(pair):
+            m = re.search(r'(\d{3,4})', pair[0])
+            return int(m.group(1)) if m else 0
+        out.sort(key=_score, reverse=True)
+        return out
+
+    def _extract_m3u8_from_play(self, data):
+        """兼容旧逻辑：取第一条流"""
+        streams = self._extract_streams_from_play(data)
+        return streams[0][1] if streams else ''
 
     def _redirect(self, url):
         return {"code": 302, "headers": {"Location": url}}
